@@ -13,7 +13,7 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
 # Checks for header files.
-AC_CHECK_HEADERS([sys/acl.h sys/extattr.h])
+AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
@@ -25,9 +25,9 @@ AC_TYPE_SSIZE_T
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_MALLOC
 
-AC_SEARCH_LIBS([acl_get_fd acl_get_perm], [acl])
+AC_SEARCH_LIBS([acl_get_perm], [acl])
 
-AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_perm_np extattr_get_fd utimensat])
+AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_perm_np extattr_get_fd utimensat])
 
 
 AC_CONFIG_FILES([Makefile])

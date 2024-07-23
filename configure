@@ -3724,6 +3724,12 @@ then :
   printf "%s\n" "#define HAVE_SYS_ACL_H 1" >>confdefs.h
 
 fi
+ac_fn_c_check_header_compile "$LINENO" "acl/libacl.h" "ac_cv_header_acl_libacl_h" "$ac_includes_default"
+if test "x$ac_cv_header_acl_libacl_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_ACL_LIBACL_H 1" >>confdefs.h
+
+fi
 ac_fn_c_check_header_compile "$LINENO" "sys/extattr.h" "ac_cv_header_sys_extattr_h" "$ac_includes_default"
 if test "x$ac_cv_header_sys_extattr_h" = xyes
 then :
@@ -3976,9 +3982,9 @@ fi
 
 
 
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing acl_get_fd acl_get_perm" >&5
-printf %s "checking for library containing acl_get_fd acl_get_perm... " >&6; }
-if test ${ac_cv_search_acl_get_fd_acl_get_perm+y}
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing acl_get_perm" >&5
+printf %s "checking for library containing acl_get_perm... " >&6; }
+if test ${ac_cv_search_acl_get_perm+y}
 then :
   printf %s "(cached) " >&6
 else case e in #(
@@ -3995,11 +4001,11 @@ cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 #ifdef __cplusplus
 extern "C"
 #endif
-char acl_get_fd acl_get_perm (void);
+char acl_get_perm (void);
 int
 main (void)
 {
-return acl_get_fd acl_get_perm ();
+return acl_get_perm ();
   ;
   return 0;
 }
@@ -4014,29 +4020,29 @@ do
   fi
   if ac_fn_c_try_link "$LINENO"
 then :
-  ac_cv_search_acl_get_fd_acl_get_perm=$ac_res
+  ac_cv_search_acl_get_perm=$ac_res
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext
-  if test ${ac_cv_search_acl_get_fd_acl_get_perm+y}
+  if test ${ac_cv_search_acl_get_perm+y}
 then :
   break
 fi
 done
-if test ${ac_cv_search_acl_get_fd_acl_get_perm+y}
+if test ${ac_cv_search_acl_get_perm+y}
 then :
 
 else case e in #(
-  e) ac_cv_search_acl_get_fd_acl_get_perm=no ;;
+  e) ac_cv_search_acl_get_perm=no ;;
 esac
 fi
 rm conftest.$ac_ext
 LIBS=$ac_func_search_save_LIBS ;;
 esac
 fi
-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_acl_get_fd_acl_get_perm" >&5
-printf "%s\n" "$ac_cv_search_acl_get_fd_acl_get_perm" >&6; }
-ac_res=$ac_cv_search_acl_get_fd_acl_get_perm
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_acl_get_perm" >&5
+printf "%s\n" "$ac_cv_search_acl_get_perm" >&6; }
+ac_res=$ac_cv_search_acl_get_perm
 if test "$ac_res" != no
 then :
   test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
@@ -4054,6 +4060,12 @@ ac_fn_c_check_func "$LINENO" "acl_get_fd_np" "ac_cv_func_acl_get_fd_np"
 if test "x$ac_cv_func_acl_get_fd_np" = xyes
 then :
   printf "%s\n" "#define HAVE_ACL_GET_FD_NP 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "acl_get_fd" "ac_cv_func_acl_get_fd"
+if test "x$ac_cv_func_acl_get_fd" = xyes
+then :
+  printf "%s\n" "#define HAVE_ACL_GET_FD 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "acl_get_perm_np" "ac_cv_func_acl_get_perm_np"
