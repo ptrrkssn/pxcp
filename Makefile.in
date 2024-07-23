@@ -30,7 +30,7 @@ TAR =			tar
 @SET_MAKE@
 
 VALGRIND =		valgrind
-VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --show-leak-kinds=all 
+VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --show-leak-kinds=all
 
 PROGRAMS =	        pxcp
 

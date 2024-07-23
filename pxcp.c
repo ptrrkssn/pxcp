@@ -33,13 +33,17 @@
 
 #include "config.h"
 
+#ifdef __linux__
+#define _GNU_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
@@ -48,9 +52,19 @@
 #include <sys/acl.h>
 #endif
 
+#if HAVE_ACL_LIBACL_H
+#include <acl/libacl.h>
+#endif
+
 #if HAVE_SYS_EXTATTR_H
 #include <sys/extattr.h>
 #endif
+
+#ifndef AT_RESOLVE_BENEATH
+#define AT_RESOLVE_BENEATH 0
+#endif
+
+
 
 int f_debug = 0;
 int f_verbose = 0;
@@ -87,9 +101,13 @@ dev_t d_dev = 0;
 #define acl_get_perm_np(ps,p) acl_get_perm(ps,p)
 #endif
 
+#if !HAVE_FUNLINKAT
+#define funlinkat(dirfd,name,fd,flags) unlinkat(dirfd,name,flags)
+#endif
+
 
 #ifdef ACL_EXECUTE
-static int acl_perms_posix[] = {
+static acl_perm_t acl_perms_posix[] = {
     ACL_EXECUTE,
     ACL_WRITE,
     ACL_READ
@@ -97,7 +115,7 @@ static int acl_perms_posix[] = {
 #endif
 
 #ifdef ACL_READ_DATA
-static int acl_perms_nfs4[] = {
+static acl_perm_t acl_perms_nfs4[] = {
     ACL_READ_DATA,
     ACL_LIST_DIRECTORY,
     ACL_WRITE_DATA,
@@ -212,8 +230,8 @@ acl_diff(acl_t src,
 	    for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 		acl_perm_t s_p, d_p;
 
-		s_p = acl_get_perm_np(s_e, acl_perms_posix[j]);
-		d_p = acl_get_perm_np(d_e, acl_perms_posix[j]);
+		s_p = acl_get_perm_np(s_ps, acl_perms_posix[j]);
+		d_p = acl_get_perm_np(d_ps, acl_perms_posix[j]);
 		if (s_p != d_p)
 		    return 5;
 	    }
@@ -222,8 +240,8 @@ acl_diff(acl_t src,
 	    for (j = 0; j < sizeof(acl_perms_nfs4)/sizeof(acl_perms_nfs4[0]); j++) {
 		acl_perm_t s_p, d_p;
 
-		s_p = acl_get_perm_np(s_e, acl_perms_nfs4[j]);
-		d_p = acl_get_perm_np(d_e, acl_perms_nfs4[j]);
+		s_p = acl_get_perm_np(s_ps, acl_perms_nfs4[j]);
+		d_p = acl_get_perm_np(d_ps, acl_perms_nfs4[j]);
 		if (s_p != d_p)
 		    return 6;
 	    }
@@ -245,8 +263,8 @@ acl_diff(acl_t src,
 	    for (j = 0; j < sizeof(acl_flags_nfs4)/sizeof(acl_flags_nfs4[0]); j++) {
 		acl_flag_t s_f, d_f;
 
-		s_f = acl_get_flag_np(s_e, acl_flags_nfs4[j]);
-		d_f = acl_get_flag_np(d_e, acl_flags_nfs4[j]);
+		s_f = acl_get_flag_np(s_fs, acl_flags_nfs4[j]);
+		d_f = acl_get_flag_np(d_fs, acl_flags_nfs4[j]);
 		if (s_f != d_f)
 		    return 7;
 	    }
@@ -264,8 +282,8 @@ acl_diff(acl_t src,
 	for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 	    acl_perm_t s_p, d_p;
 
-	    s_p = acl_get_perm_np(s_e, acl_perms_posix[j]);
-	    d_p = acl_get_perm_np(d_e, acl_perms_posix[j]);
+	    s_p = acl_get_perm_np(s_ps, acl_perms_posix[j]);
+	    d_p = acl_get_perm_np(d_ps, acl_perms_posix[j]);
 	    if (s_p != d_p)
 		return 5;
 	}
@@ -401,14 +419,15 @@ do_update(int s_dirfd,
     int rc = 0;
     int s_fd = -1, d_fd = -1;
     acl_t s_acl = NULL, d_acl = NULL;
-
+    off_t dpos = 0;
 
     if (f_debug)
 	fprintf(stderr, "*** do_update(%d, %s, %d, %s)\n",
 		s_dirfd, s_dirpath, d_dirfd, d_dirpath);
 
-    while (rc == 0 && (buflen = getdents(s_dirfd, dirbuf, sizeof(dirbuf))) > 0) {
-	bufp = dirbuf;
+    while (rc == 0 &&
+           (buflen = getdirentries(s_dirfd, dirbuf, sizeof(dirbuf), &dpos)) > 0) {
+        bufp = dirbuf;
 
 	while (rc == 0 && bufp < dirbuf+buflen) {
 	    struct dirent *dep = (struct dirent *) bufp;
@@ -703,6 +722,7 @@ do_update(int s_dirfd,
 
 		if (f_times) {
 #if HAVE_UTIMENSAT
+#if HAVE_STRUCT_STAT_ST_BIRTHTIM_TV_SEC
 		    if (f_force ||
 			s_sb.st_birthtim.tv_sec != d_sb.st_birthtim.tv_sec ||
 			s_sb.st_birthtim.tv_nsec != d_sb.st_birthtim.tv_nsec) {
@@ -720,6 +740,7 @@ do_update(int s_dirfd,
 			}
 			mdiff |= MD_BTIME;
 		    }
+#endif
 		    if (f_force ||
 			s_sb.st_mtim.tv_sec != d_sb.st_mtim.tv_sec ||
 			s_sb.st_mtim.tv_nsec != d_sb.st_mtim.tv_nsec) {
@@ -846,14 +867,14 @@ do_prune(int s_dirfd,
     char dirbuf[65536], *bufp;
     int rc = 0;
     int s_fd = -1, d_fd = -1;
-
+    off_t dpos = 0;
 
     if (f_debug)
 	fprintf(stderr, "*** do_prune(%d, %s, %d, %s)\n",
 		s_dirfd, s_dirpath,
 		d_dirfd, d_dirpath);
 
-    while ((buflen = getdents(d_dirfd, dirbuf, sizeof(dirbuf))) > 0) {
+    while ((buflen = getdirentries(d_dirfd, dirbuf, sizeof(dirbuf), &dpos)) > 0) {
 	bufp = dirbuf;
 
 	while (bufp < dirbuf+buflen) {

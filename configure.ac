@@ -1,5 +1,4 @@
-
-AC_PREREQ([2.72])
+AC_PREREQ([2.71])
 AC_INIT([PXCL],[1.0.0],[pen@lysator.liu.se],[pxcp],[https://github.com/ptrrkssn/pxcp])
 
 AC_CONFIG_SRCDIR([pxcp.c])
@@ -25,9 +24,11 @@ AC_TYPE_SSIZE_T
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_MALLOC
 
+AC_CHECK_MEMBERS([struct stat.st_birthtim.tv_sec])
+
 AC_SEARCH_LIBS([acl_get_perm], [acl])
 
-AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_perm_np extattr_get_fd utimensat])
+AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_perm acl_get_perm_np extattr_get_fd utimensat getdirentries funlinkat])
 
 
 AC_CONFIG_FILES([Makefile])
