@@ -3976,6 +3976,12 @@ fi
 
 
 
+ac_fn_c_check_func "$LINENO" "acl_get_brand_np" "ac_cv_func_acl_get_brand_np"
+if test "x$ac_cv_func_acl_get_brand_np" = xyes
+then :
+  printf "%s\n" "#define HAVE_ACL_GET_BRAND_NP 1" >>confdefs.h
+
+fi
 ac_fn_c_check_func "$LINENO" "acl_get_fd_np" "ac_cv_func_acl_get_fd_np"
 if test "x$ac_cv_func_acl_get_fd_np" = xyes
 then :

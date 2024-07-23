@@ -125,10 +125,13 @@ static int acl_flags_nfs4[] = {
 int
 acl_diff(acl_t src,
 	 acl_t dst) {
-    int j, d_rc, s_rc, s_b, d_b;
+    int j, d_rc, s_rc;
     acl_entry_t s_e, d_e;
 
 
+#if HAVE_ACL_GET_BRAND_NP
+    int s_b, d_b;
+    
     /* Check brand */
     if (acl_get_brand_np(src, &s_b) < 0)
 	return -1;
@@ -136,6 +139,7 @@ acl_diff(acl_t src,
 	return -1;
     if (s_b != d_b)
 	return 1;
+#endif
     
     s_rc = acl_get_entry(src, ACL_FIRST_ENTRY, &s_e);
     d_rc = acl_get_entry(dst, ACL_FIRST_ENTRY, &d_e);
@@ -197,6 +201,7 @@ acl_diff(acl_t src,
 	if (acl_get_permset(d_e, &d_ps) < 0)
 	    return -1;
 
+#ifdef ACL_BRAND_NFS4
 	switch (s_b) {
 	case ACL_BRAND_POSIX:
 	    for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
@@ -249,6 +254,19 @@ acl_diff(acl_t src,
 	    if (s_et != d_et)
 		return 8;
 	}
+#else
+#ifdef ACL_EXECUTE
+	for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
+	    acl_perm_t s_p, d_p;
+	    
+	    s_p = acl_get_perm_np(s_e, acl_perms_posix[j]);
+	    d_p = acl_get_perm_np(d_e, acl_perms_posix[j]);
+	    if (s_p != d_p)
+		return 5;
+	}
+	break;
+#endif
+#endif
 	
 	s_rc = acl_get_entry(src, ACL_NEXT_ENTRY, &s_e);
 	d_rc = acl_get_entry(dst, ACL_NEXT_ENTRY, &d_e);

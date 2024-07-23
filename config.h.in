@@ -1,5 +1,8 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
+/* Define to 1 if you have the 'acl_get_brand_np' function. */
+#undef HAVE_ACL_GET_BRAND_NP
+
 /* Define to 1 if you have the 'acl_get_fd' function. */
 #undef HAVE_ACL_GET_FD
 
