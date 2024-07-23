@@ -3,9 +3,6 @@
 /* Define to 1 if you have the 'acl_get_brand_np' function. */
 #undef HAVE_ACL_GET_BRAND_NP
 
-/* Define to 1 if you have the 'acl_get_fd' function. */
-#undef HAVE_ACL_GET_FD
-
 /* Define to 1 if you have the 'acl_get_fd_np' function. */
 #undef HAVE_ACL_GET_FD_NP
 
