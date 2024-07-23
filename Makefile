@@ -9,7 +9,7 @@ pxcp: $(PXCPOBJS)
 	$(CC) -g -o pxcp $(PXCPOBJS)
 
 clean distclean:
-	-rm -f core *.o *~ \#* pxcp
+	-rm -f core *.o pxcp; find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
 
 
 # Git targets
