@@ -3988,6 +3988,12 @@ then :
   printf "%s\n" "#define HAVE_ACL_GET_FD_NP 1" >>confdefs.h
 
 fi
+ac_fn_c_check_func "$LINENO" "acl_get_perm_np" "ac_cv_func_acl_get_perm_np"
+if test "x$ac_cv_func_acl_get_perm_np" = xyes
+then :
+  printf "%s\n" "#define HAVE_ACL_GET_PERM_NP 1" >>confdefs.h
+
+fi
 ac_fn_c_check_func "$LINENO" "acl_get_fd" "ac_cv_func_acl_get_fd"
 if test "x$ac_cv_func_acl_get_fd" = xyes
 then :

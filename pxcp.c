@@ -294,14 +294,14 @@ ts_isless(struct timespec *a,
 
 
 char *
-strdupcat(const char *s1;
+strdupcat(const char *s1,
           ...) {
-  va_arg ap;
+  va_list ap;
   char *s, *res, *cp;
   size_t len = strlen(s1);
 
   va_start(ap, s1);
-  while (s = va_arg(ap, char *)) {
+  while ((s = va_arg(ap, char *)) != NULL) {
     len += strlen(s);
   }
   va_end(ap);
@@ -315,7 +315,7 @@ strdupcat(const char *s1;
     ;
 
   va_start(ap, s1);
-  while (s = va_arg(ap, char *)) {
+  while ((s = va_arg(ap, char *)) != NULL) {
     while (*s)
       *cp++ = *s++;
   }
