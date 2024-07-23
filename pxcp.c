@@ -31,6 +31,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,9 +41,15 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/acl.h>
-#include <sys/extattr.h>
 #include <dirent.h>
+
+#if HAVE_SYS_ACL_H
+#include <sys/acl.h>
+#endif
+
+#if HAVE_SYS_EXTATTR_H
+#include <sys/extattr.h>
+#endif
 
 int f_debug = 0;
 int f_verbose = 0;
@@ -456,6 +464,7 @@ do_update(int s_dirfd,
 		
 
 		if (f_xattr) {
+#if HAVE_EXTATTR_GET_FD
 		    ssize_t s_alen, d_alen;
 		    int s_i, d_i;
 		    
@@ -603,9 +612,11 @@ do_update(int s_dirfd,
 			if (d_alist)
 			    free(d_alist);
 		    }
+#endif
 		}
 		
 		if (f_acl) {
+#if HAVE_ACL_GET_FD_NP
 		    acl_type_t s_t, d_t;
 		    
 		    s_acl = acl_get_fd_np(s_fd, s_t = ACL_TYPE_NFS4);
@@ -627,9 +638,11 @@ do_update(int s_dirfd,
 			}
 			mdiff = MD_ACL;
 		    }
+#endif
 		}
 		
 		if (f_times) {
+#if HAVE_UTIMENSAT
 		    if (f_force ||
 			s_sb.st_birthtim.tv_sec != d_sb.st_birthtim.tv_sec || 
 			s_sb.st_birthtim.tv_nsec != d_sb.st_birthtim.tv_nsec) {
@@ -665,6 +678,7 @@ do_update(int s_dirfd,
 			}
 			mdiff |= MD_MTIME;
 		    }
+#endif
 		}
 	    }
 	    

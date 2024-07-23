@@ -1,0 +1,73 @@
+# Makefile for pxcp
+#
+# @configure_input@
+
+.c.o:
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c -o $@ $<
+
+PACKAGE =		@PACKAGE_TARNAME@
+VERSION =		@PACKAGE_VERSION@
+
+srcdir =		@srcdir@
+VPATH =			@srcdir@
+
+prefix =		@prefix@
+exec_prefix =		@exec_prefix@
+datarootdir =           @datarootdir@
+
+BINDIR =		@bindir@
+MANDIR =		@mandir@
+MAN1DIR =		${MANDIR}/man1
+
+CPPFLAGS =		@CPPFLAGS@ -I. -I$(srcdir)
+CFLAGS =		@CFLAGS@ -Wall
+LDFLAGS =		@LDFLAGS@
+LIBS =			@LIBS@
+
+CC = 			@CC@
+INSTALL =		@INSTALL@
+TAR =			tar
+@SET_MAKE@
+
+VALGRIND =		valgrind
+VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --show-leak-kinds=all 
+
+PROGRAMS =	        pxcp
+
+PXCP_OBJS =             pxcp.o
+
+all: $(PROGRAMS)
+
+
+pxcp.o: pxcp.c config.h
+
+pxcp: $(PXCP_OBJS)
+	$(CC) $(LDFLAGS) -o pxcp $(PXCP_OBJS) $(LIBS)
+
+configure: configure.ac
+	autoconf
+
+config.h.in: configure
+	autoheader
+
+config.h: config.h.in config.status
+	./config.status
+
+
+clean:
+	-rm -f core *.o pxcp; find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
+
+distclean: clean
+	rm -fr config.status config.log autom4te.cache Makefile config.h
+
+# Check targets
+check:	pxcp
+	./pxcp -nvm . .
+
+
+# Git targets
+push: 	distclean
+	git add -A && git commit -a && git push
+
+pull:
+	git pull
