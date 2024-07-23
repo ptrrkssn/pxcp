@@ -4,21 +4,21 @@
  * Copyright (c) 2024, Peter Eriksson <pen@lysator.liu.se>
  *
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  * 1. Redistributions of source code must retain the above copyright notice, this
  *    list of conditions and the following disclaimer.
- * 
+ *
  * 2. Redistributions in binary form must reproduce the above copyright notice,
  *    this list of conditions and the following disclaimer in the documentation
  *    and/or other materials provided with the distribution.
- * 
+ *
  * 3. Neither the name of the copyright holder nor the names of its
  *    contributors may be used to endorse or promote products derived from
  *    this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
  * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -35,6 +35,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -81,6 +82,10 @@ dev_t d_dev = 0;
 
 #define MD_CONTENT  0x00F0
 #define MD_METADATA 0xFF00
+
+#ifndef HAVE_ACL_GET_PERM_NP
+#define acl_get_perm_np(ps,p) ((ps & p) != 0)
+#endif
 
 
 #ifdef ACL_EXECUTE
@@ -131,7 +136,7 @@ acl_diff(acl_t src,
 
 #if HAVE_ACL_GET_BRAND_NP
     int s_b, d_b;
-    
+
     /* Check brand */
     if (acl_get_brand_np(src, &s_b) < 0)
 	return -1;
@@ -140,7 +145,7 @@ acl_diff(acl_t src,
     if (s_b != d_b)
 	return 1;
 #endif
-    
+
     s_rc = acl_get_entry(src, ACL_FIRST_ENTRY, &s_e);
     d_rc = acl_get_entry(dst, ACL_FIRST_ENTRY, &d_e);
     while (s_rc > 0 && d_rc > 0) {
@@ -150,16 +155,16 @@ acl_diff(acl_t src,
 	uid_t s_u, d_u;
 	gid_t s_g, d_g;
 
-	
+
 	/* OWNER@, GROUP@, user:, group:, EVERYONE@ etc */
 	if (acl_get_tag_type(s_e, &s_t) < 0)
 	    return -1;
 	if (acl_get_tag_type(d_e, &d_t) < 0)
 	    return -1;
-	
+
 	if (s_t != d_t)
 	    return 2;
-	
+
 	switch (s_t) {
 	case ACL_USER:
 	    s_q = acl_get_qualifier(s_e);
@@ -206,7 +211,7 @@ acl_diff(acl_t src,
 	case ACL_BRAND_POSIX:
 	    for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 		acl_perm_t s_p, d_p;
-		
+
 		s_p = acl_get_perm_np(s_e, acl_perms_posix[j]);
 		d_p = acl_get_perm_np(d_e, acl_perms_posix[j]);
 		if (s_p != d_p)
@@ -216,7 +221,7 @@ acl_diff(acl_t src,
 	case ACL_BRAND_NFS4:
 	    for (j = 0; j < sizeof(acl_perms_nfs4)/sizeof(acl_perms_nfs4[0]); j++) {
 		acl_perm_t s_p, d_p;
-		
+
 		s_p = acl_get_perm_np(s_e, acl_perms_nfs4[j]);
 		d_p = acl_get_perm_np(d_e, acl_perms_nfs4[j]);
 		if (s_p != d_p)
@@ -230,22 +235,22 @@ acl_diff(acl_t src,
 	if (s_b == ACL_BRAND_NFS4) {
 	    acl_flagset_t s_fs, d_fs;
 	    acl_entry_type_t s_et, d_et;
-	    
+
 	    /* Check flagset */
 	    if (acl_get_flagset_np(s_e, &s_fs) < 0)
 		return -1;
 	    if (acl_get_flagset_np(d_e, &d_fs) < 0)
 		return -1;
-	    
+
 	    for (j = 0; j < sizeof(acl_flags_nfs4)/sizeof(acl_flags_nfs4[0]); j++) {
 		acl_flag_t s_f, d_f;
-		
+
 		s_f = acl_get_flag_np(s_e, acl_flags_nfs4[j]);
 		d_f = acl_get_flag_np(d_e, acl_flags_nfs4[j]);
 		if (s_f != d_f)
 		    return 7;
 	    }
-	    
+
 	    /* ALLOW/DENY */
 	    if (acl_get_entry_type_np(s_e, &s_et) < 0)
 		return -1;
@@ -258,7 +263,7 @@ acl_diff(acl_t src,
 #ifdef ACL_EXECUTE
 	for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 	    acl_perm_t s_p, d_p;
-	    
+
 	    s_p = acl_get_perm_np(s_e, acl_perms_posix[j]);
 	    d_p = acl_get_perm_np(d_e, acl_perms_posix[j]);
 	    if (s_p != d_p)
@@ -267,14 +272,14 @@ acl_diff(acl_t src,
 	break;
 #endif
 #endif
-	
+
 	s_rc = acl_get_entry(src, ACL_NEXT_ENTRY, &s_e);
 	d_rc = acl_get_entry(dst, ACL_NEXT_ENTRY, &d_e);
     }
 
     if (s_rc != d_rc)
 	return 9;
-    
+
     return 0;
 }
 
@@ -288,6 +293,38 @@ ts_isless(struct timespec *a,
 }
 
 
+char *
+strdupcat(const char *s1;
+          ...) {
+  va_arg ap;
+  char *s, *res, *cp;
+  size_t len = strlen(s1);
+
+  va_start(ap, s1);
+  while (s = va_arg(ap, char *)) {
+    len += strlen(s);
+  }
+  va_end(ap);
+
+  res = malloc(len+1);
+  if (!res)
+    return NULL;
+
+  strcpy(res, s1);
+  for (cp = res; *cp; ++cp)
+    ;
+
+  va_start(ap, s1);
+  while (s = va_arg(ap, char *)) {
+    while (*s)
+      *cp++ = *s++;
+  }
+  va_end(ap);
+  *cp = '\0';
+
+  return res;
+}
+
 int
 do_copy(int s_fd,
 	const char *s_dirpath,
@@ -300,11 +337,11 @@ do_copy(int s_fd,
     int d_fd;
     char buf[128*1024];
     ssize_t got, rc = 0;
-    
+
 
     if (f_debug)
 	fprintf(stderr, "*** do_copy(%d, %s, %d, %s, %s)\n", s_fd, s_dirpath, d_dirfd, d_dirpath, d_name);
-    
+
     d_fd = openat(d_dirfd, tmpname, O_CREAT|O_WRONLY, mode);
     if (d_fd < 0) {
 	fprintf(stderr, "%s: Error: %s/%s: openat(O_CREAT): %s\n",
@@ -348,7 +385,7 @@ do_copy(int s_fd,
 	*d_fdp = d_fd;
     else
 	close(d_fd);
-    
+
     return 0;
 }
 
@@ -364,24 +401,24 @@ do_update(int s_dirfd,
     int rc = 0;
     int s_fd = -1, d_fd = -1;
     acl_t s_acl = NULL, d_acl = NULL;
-    
+
 
     if (f_debug)
 	fprintf(stderr, "*** do_update(%d, %s, %d, %s)\n",
 		s_dirfd, s_dirpath, d_dirfd, d_dirpath);
-    
+
     while (rc == 0 && (buflen = getdents(s_dirfd, dirbuf, sizeof(dirbuf))) > 0) {
 	bufp = dirbuf;
-	
+
 	while (rc == 0 && bufp < dirbuf+buflen) {
 	    struct dirent *dep = (struct dirent *) bufp;
 	    unsigned int mdiff = 0;
 	    struct stat s_sb, d_sb;
-	    
-	    
+
+
 	    if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' || (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
 		goto Next;
-		
+
 	    s_fd = openat(s_dirfd, dep->d_name, O_RDONLY|O_NOFOLLOW);
 	    if (s_fd < 0) {
 		fprintf(stderr, "%s: Error: %s/%s: openat: %s\n",
@@ -389,7 +426,7 @@ do_update(int s_dirfd,
 		rc = -1;
 		goto End;
 	    }
-	    
+
 	    if (fstatat(s_fd, "", &s_sb, AT_EMPTY_PATH) < 0) {
 		fprintf(stderr, "%s: Error: %s/%s: fstatat: %s\n",
 			argv0, s_dirpath, dep->d_name, strerror(errno));
@@ -427,18 +464,18 @@ do_update(int s_dirfd,
 		if (fstatat(d_fd, "", &d_sb, AT_EMPTY_PATH) < 0) {
 		    fprintf(stderr, "%s: Error: %s/%s: openat: %s\n",
 			    argv0, d_dirpath, dep->d_name, strerror(errno));
-		    
+
 		    rc = -4;
 		    goto End;
 		}
-		
+
 		if (S_ISREG(s_sb.st_mode) &&
 		    (f_force ||
 		     s_sb.st_size != d_sb.st_size ||
 		     ts_isless(&d_sb.st_mtim, &s_sb.st_mtim))) {
 		    if (f_update) {
 			int n_fd = -1;
-			
+
 			if (do_copy(s_fd, s_dirpath, d_dirfd, d_dirpath, dep->d_name, s_sb.st_mode&ALLPERMS, &n_fd) < 0) {
 			    rc = -4;
 			    goto End;
@@ -448,7 +485,7 @@ do_update(int s_dirfd,
 		    }
 		    mdiff |= MD_DATA;
 		}
-		
+
 		if (f_owner && (f_force || s_sb.st_uid != d_sb.st_uid)) {
 		    if (f_update) {
 			if (fchownat(d_dirfd, dep->d_name, s_sb.st_uid, -1, AT_SYMLINK_NOFOLLOW|AT_RESOLVE_BENEATH) < 0) {
@@ -460,7 +497,7 @@ do_update(int s_dirfd,
 		    }
 		    mdiff |= MD_UID;
 		}
-		
+
 		if (f_group && (f_force || s_sb.st_gid != d_sb.st_gid)) {
 		    if (f_update) {
 			if (fchownat(d_dirfd, dep->d_name, -1, s_sb.st_gid, AT_SYMLINK_NOFOLLOW|AT_RESOLVE_BENEATH) < 0) {
@@ -472,7 +509,7 @@ do_update(int s_dirfd,
 		    }
 		    mdiff |= MD_GID;
 		}
-		
+
 		if (f_force || (s_sb.st_mode&ALLPERMS) != (d_sb.st_mode&ALLPERMS)) {
 		    if (f_update) {
 			if (fchmodat(d_dirfd, dep->d_name, s_sb.st_mode&ALLPERMS, AT_SYMLINK_NOFOLLOW|AT_RESOLVE_BENEATH) < 0) {
@@ -484,16 +521,16 @@ do_update(int s_dirfd,
 		    }
 		    mdiff |= MD_MODE;
 		}
-		
+
 
 		if (f_xattr) {
 #if HAVE_EXTATTR_GET_FD
 		    ssize_t s_alen, d_alen;
 		    int s_i, d_i;
-		    
+
 		    s_alen = extattr_list_fd(s_fd, EXTATTR_NAMESPACE_USER, NULL, 0);
 		    d_alen = extattr_list_fd(d_fd, EXTATTR_NAMESPACE_USER, NULL, 0);
-		    
+
 		    if (s_alen > 0 || d_alen > 0) {
 			char *s_alist = NULL, *d_alist = NULL;
 
@@ -507,7 +544,7 @@ do_update(int s_dirfd,
 			    }
 			    s_alen = extattr_list_fd(s_fd, EXTATTR_NAMESPACE_USER, s_alist, s_alen);
 			}
-			
+
 			if (d_alen > 0) {
 			    d_alist = (char *) malloc(d_alen);
 			    if (!d_alist) {
@@ -526,7 +563,7 @@ do_update(int s_dirfd,
 			    char *aname;
 			    ssize_t s_adlen, d_adlen;
 			    void *s_adata = NULL, *d_adata = NULL;
-			    
+
 			    unsigned char s_anlen = s_alist[s_i++];
 			    if (s_anlen == 0)
 				continue;
@@ -544,11 +581,11 @@ do_update(int s_dirfd,
 			    }
 
 			    aname = strndup(s_alist+s_i, s_anlen);
-			    
+
 			    s_adlen = extattr_get_fd(s_fd, EXTATTR_NAMESPACE_USER, aname, NULL, 0);
 			    s_adata = malloc(s_adlen);
 			    s_adlen = extattr_get_fd(s_fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen);
-			    
+
 			    if (d_i < d_alen) {
 				d_adlen = extattr_get_fd(d_fd, EXTATTR_NAMESPACE_USER, aname, NULL, 0);
 
@@ -559,7 +596,7 @@ do_update(int s_dirfd,
 				    if (memcmp(d_adata, s_adata, s_adlen) != 0) {
 					if (f_update) {
 					    extattr_set_fd(d_fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen);
-					}	
+					}
 					if (f_verbose > 1)
 					    printf("  ! %s/%s : %.*s\n", d_dirpath, dep->d_name, s_anlen, s_alist+s_i);
 					mdiff |= MD_ATTR;
@@ -610,7 +647,7 @@ do_update(int s_dirfd,
 			    if (s_i >= s_alen) {
 				if (f_update) {
 				    char *aname = strndup((char *) d_alist+d_i, d_anlen);
-				    
+
 				    if (extattr_delete_fd(d_fd, EXTATTR_NAMESPACE_USER, aname) < 0) {
 					fprintf(stderr, "%s: Error: %s/%s: %s: extattr_delete: %s\n",
 						argv0, d_dirpath, dep->d_name, aname, strerror(errno));
@@ -629,7 +666,7 @@ do_update(int s_dirfd,
 
 			    d_i += d_anlen;
 			}
-			
+
 			if (s_alist)
 			    free(s_alist);
 			if (d_alist)
@@ -637,19 +674,19 @@ do_update(int s_dirfd,
 		    }
 #endif
 		}
-		
+
 		if (f_acl) {
 #if HAVE_ACL_GET_FD_NP
 		    acl_type_t s_t, d_t;
-		    
+
 		    s_acl = acl_get_fd_np(s_fd, s_t = ACL_TYPE_NFS4);
 		    if (!s_acl)
 			s_acl = acl_get_fd_np(s_fd, s_t = ACL_TYPE_ACCESS);
-		    
+
 		    d_acl = acl_get_fd_np(d_fd, d_t = ACL_TYPE_NFS4);
 		    if (!d_acl)
 			d_acl = acl_get_fd_np(d_fd, d_t = ACL_TYPE_ACCESS);
-		    
+
 		    if (s_acl && (f_force || !d_acl || (rc = acl_diff(s_acl, d_acl)))) {
 			if (f_update) {
 			    if (acl_set_fd_np(d_fd, s_acl, s_t) < 0) {
@@ -663,15 +700,15 @@ do_update(int s_dirfd,
 		    }
 #endif
 		}
-		
+
 		if (f_times) {
 #if HAVE_UTIMENSAT
 		    if (f_force ||
-			s_sb.st_birthtim.tv_sec != d_sb.st_birthtim.tv_sec || 
+			s_sb.st_birthtim.tv_sec != d_sb.st_birthtim.tv_sec ||
 			s_sb.st_birthtim.tv_nsec != d_sb.st_birthtim.tv_nsec) {
 			if (f_update) {
 			    struct timespec times[2];
-			    
+
 			    times[0] = s_sb.st_atim;
 			    times[1] = s_sb.st_birthtim;
 			    if (utimensat(d_dirfd, dep->d_name, times, AT_RESOLVE_BENEATH) < 0) {
@@ -684,11 +721,11 @@ do_update(int s_dirfd,
 			mdiff |= MD_BTIME;
 		    }
 		    if (f_force ||
-			s_sb.st_mtim.tv_sec != d_sb.st_mtim.tv_sec || 
+			s_sb.st_mtim.tv_sec != d_sb.st_mtim.tv_sec ||
 			s_sb.st_mtim.tv_nsec != d_sb.st_mtim.tv_nsec) {
 			if (f_update) {
 			    struct timespec times[2];
-			    
+
 			    times[0] = s_sb.st_atim;
 			    times[1] = s_sb.st_mtim;
 			    if (utimensat(d_dirfd, dep->d_name, times, AT_RESOLVE_BENEATH) < 0) {
@@ -697,14 +734,14 @@ do_update(int s_dirfd,
 				rc = -7;
 				goto End;
 			    }
-			    
+
 			}
 			mdiff |= MD_MTIME;
 		    }
 #endif
 		}
 	    }
-	    
+
 	    if (f_verbose > 1 || (f_verbose && mdiff)) {
 		if (mdiff & MD_NEW)
 		    putchar('+');
@@ -722,25 +759,28 @@ do_update(int s_dirfd,
 		int rc;
 		char *s_dirbuf = NULL, *d_dirbuf = NULL;
 
-		if (asprintf(&s_dirbuf, "%s/%s", s_dirpath, dep->d_name) < 0) {
-		    fprintf(stderr, "%s: Error: asprintf: %s\n",
+                s_dirbuf = strdupcat(s_dirpath, "/", dep->d_name, NULL);
+                if (!s_dirbuf) {
+		    fprintf(stderr, "%s: Error: strdupcat: %s\n",
 			    argv0, strerror(errno));
 		    rc = -7;
 		    goto End;
 		}
-		if (asprintf(&d_dirbuf, "%s/%s", d_dirpath, dep->d_name) < 0) {
-		    fprintf(stderr, "%s: Error: asprintf: %s\n",
+
+                d_dirbuf = strdupcat(d_dirpath, "/", dep->d_name, NULL);
+                if (!d_dirbuf) {
+		    fprintf(stderr, "%s: Error: strdupcat: %s\n",
 			    argv0, strerror(errno));
 		    rc = -8;
 		    free(s_dirbuf);
 		    s_dirbuf = NULL;
 		    goto End;
 		}
-		
+
 		rc = do_update(s_fd, s_dirbuf, d_fd, d_dirbuf);
 
 		/* XXX: Reset utimes */
-		
+
 		if (s_dirbuf) {
 		    free(s_dirbuf);
 		    s_dirbuf = NULL;
@@ -749,7 +789,7 @@ do_update(int s_dirfd,
 		    free(d_dirbuf);
 		    d_dirbuf = NULL;
 		}
-		
+
 		if (rc)
 		    goto End;
 	    }
@@ -760,7 +800,7 @@ do_update(int s_dirfd,
 		acl_free(s_acl);
 		s_acl = NULL;
 	    }
-	    
+
 	    if (d_acl) {
 		acl_free(d_acl);
 		d_acl = NULL;
@@ -770,7 +810,7 @@ do_update(int s_dirfd,
 		close(s_fd);
 		s_fd = -1;
 	    }
-	    
+
 	    if (d_fd >= 0) {
 		close(d_fd);
 		d_fd = -1;
@@ -783,16 +823,16 @@ do_update(int s_dirfd,
  End:
     if (s_acl)
 	acl_free(s_acl);
-    
+
     if (d_acl)
 	acl_free(d_acl);
 
     if (s_fd >= 0)
 	close(s_fd);
-    
+
     if (d_fd >= 0)
 	close(d_fd);
-    
+
     return rc;
 }
 
@@ -806,20 +846,20 @@ do_prune(int s_dirfd,
     char dirbuf[65536], *bufp;
     int rc = 0;
     int s_fd = -1, d_fd = -1;
-    
+
 
     if (f_debug)
 	fprintf(stderr, "*** do_prune(%d, %s, %d, %s)\n",
 		s_dirfd, s_dirpath,
 		d_dirfd, d_dirpath);
-    
+
     while ((buflen = getdents(d_dirfd, dirbuf, sizeof(dirbuf))) > 0) {
 	bufp = dirbuf;
-	    
+
 	while (bufp < dirbuf+buflen) {
 	    struct dirent *dep = (struct dirent *) bufp;
 	    struct stat d_sb;
-	    
+
 	    if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' || (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
 		goto Next;
 
@@ -835,26 +875,31 @@ do_prune(int s_dirfd,
 
 	    if (s_dirfd >= 0)
 		s_fd = openat(s_dirfd, dep->d_name, O_PATH|O_NOFOLLOW);
-	    
-	    if (f_recurse && S_ISDIR(d_sb.st_mode) && (!f_noxdev || d_sb.st_dev == d_dev)) {
+
+	    if (f_recurse &&
+                S_ISDIR(d_sb.st_mode) &&
+                (!f_noxdev || d_sb.st_dev == d_dev)) {
 		int rc;
 		char *s_dirbuf = NULL, *d_dirbuf = NULL;
 
-		if (asprintf(&s_dirbuf, "%s/%s", s_dirpath, dep->d_name) < 0) {
-		    fprintf(stderr, "%s: Error: asprintf: %s\n",
+                s_dirbuf = strdupcat(s_dirpath, "/", dep->d_name, NULL);
+                if (!s_dirbuf) {
+		    fprintf(stderr, "%s: Error: strdupcat: %s\n",
 			    argv0, strerror(errno));
 		    rc = -2;
 		    goto End;
 		}
-		if (asprintf(&d_dirbuf, "%s/%s", d_dirpath, dep->d_name) < 0) {
-		    fprintf(stderr, "%s: Error: asprintf: %s\n",
+
+                d_dirbuf = strdupcat(d_dirpath, "/", dep->d_name, NULL);
+                if (!d_dirbuf) {
+		    fprintf(stderr, "%s: Error: strdupcat: %s\n",
 			    argv0, strerror(errno));
 		    free(s_dirbuf);
 		    s_dirbuf = NULL;
 		    rc = -3;
 		    goto End;
 		}
-		
+
 		rc = do_prune(s_fd, s_dirbuf, d_fd, d_dirbuf);
 
 		if (s_dirbuf) {
@@ -866,12 +911,12 @@ do_prune(int s_dirfd,
 		    free(d_dirbuf);
 		    d_dirbuf = NULL;
 		}
-		
+
 		if (rc)
 		    goto End;
 	    }
 
-	    
+
 	    if (s_fd < 0) {
 		if (f_update) {
 		    if (funlinkat(d_dirfd, dep->d_name, d_fd, AT_RESOLVE_BENEATH|(S_ISDIR(d_sb.st_mode) ? AT_REMOVEDIR : 0)) < 0) {
@@ -883,16 +928,16 @@ do_prune(int s_dirfd,
 		}
 		printf("- %s/%s\n", d_dirpath, dep->d_name);
 	    }
-	    
+
 	Next:
 	    bufp += dep->d_reclen;
 	}
     }
-    
+
  End:
     if (d_fd >= 0)
 	close(d_fd);
-	    
+
     if (s_fd >= 0)
 	close(s_fd);
 
@@ -903,10 +948,10 @@ int
 main(int argc,
      char *argv[]) {
     int i, j, rc, s_fd, d_fd;
-    
+
 
     argv0 = argv[0];
-    
+
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 	for (j = 1; argv[i][j]; j++) {
 	    switch (argv[i][j]) {
@@ -984,7 +1029,7 @@ main(int argc,
     }
     if (f_noxdev) {
 	struct stat sb;
-	
+
 	if (fstat(s_fd, &sb) < 0) {
 	    fprintf(stderr, "%s: Error: %s: fstat: %s\n",
 		    argv[0], argv[i], strerror(errno));
@@ -999,10 +1044,10 @@ main(int argc,
 		argv[0], argv[i+1], strerror(errno));
 	exit(1);
     }
-    
+
     if (f_noxdev) {
 	struct stat sb;
-	
+
 	if (fstat(d_fd, &sb) < 0) {
 	    fprintf(stderr, "%s: Error: %s: fstat: %s\n",
 		    argv[0], argv[i+1], strerror(errno));
@@ -1010,7 +1055,7 @@ main(int argc,
 	}
 	d_dev = sb.st_dev;
     }
-    
+
     rc = do_update(s_fd, argv[i], d_fd, argv[i+1]);
     if (rc)
 	exit(1);

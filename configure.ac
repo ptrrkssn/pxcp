@@ -25,7 +25,7 @@ AC_TYPE_SSIZE_T
 AC_FUNC_ERROR_AT_LINE
 AC_FUNC_MALLOC
 
-AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd extattr_get_fd utimensat])
+AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_perm_np acl_get_fd extattr_get_fd utimensat])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
