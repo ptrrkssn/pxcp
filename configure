@@ -3976,16 +3976,16 @@ fi
 
 
 
-ac_fn_c_check_func "$LINENO" "acl" "ac_cv_func_acl"
-if test "x$ac_cv_func_acl" = xyes
-then :
-  printf "%s\n" "#define HAVE_ACL 1" >>confdefs.h
-
-fi
 ac_fn_c_check_func "$LINENO" "acl_get_fd_np" "ac_cv_func_acl_get_fd_np"
 if test "x$ac_cv_func_acl_get_fd_np" = xyes
 then :
   printf "%s\n" "#define HAVE_ACL_GET_FD_NP 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "acl_get_fd" "ac_cv_func_acl_get_fd"
+if test "x$ac_cv_func_acl_get_fd" = xyes
+then :
+  printf "%s\n" "#define HAVE_ACL_GET_FD 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "extattr_get_fd" "ac_cv_func_extattr_get_fd"

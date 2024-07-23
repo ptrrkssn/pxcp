@@ -83,12 +83,15 @@ dev_t d_dev = 0;
 #define MD_METADATA 0xFF00
 
 
+#ifdef ACL_EXECUTE
 static int acl_perms_posix[] = {
     ACL_EXECUTE,
     ACL_WRITE,
     ACL_READ
 };
+#endif
 
+#ifdef ACL_READ_DATA
 static int acl_perms_nfs4[] = {
     ACL_READ_DATA,
     ACL_LIST_DIRECTORY,
@@ -107,7 +110,9 @@ static int acl_perms_nfs4[] = {
     ACL_WRITE_ACL,
     ACL_SYNCHRONIZE
 };
+#endif
 
+#ifdef ACL_ENTRY_FILE_INHERIT
 static int acl_flags_nfs4[] = {
     ACL_ENTRY_FILE_INHERIT,
     ACL_ENTRY_DIRECTORY_INHERIT,
@@ -115,7 +120,7 @@ static int acl_flags_nfs4[] = {
     ACL_ENTRY_INHERIT_ONLY,
     ACL_ENTRY_INHERITED
 };
-
+#endif
 
 int
 acl_diff(acl_t src,
