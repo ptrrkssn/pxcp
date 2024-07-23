@@ -9,6 +9,9 @@
 /* Define to 1 if you have the 'acl_get_fd_np' function. */
 #undef HAVE_ACL_GET_FD_NP
 
+/* Define to 1 if you have the 'acl_get_perm' function. */
+#undef HAVE_ACL_GET_PERM
+
 /* Define to 1 if you have the 'acl_get_perm_np' function. */
 #undef HAVE_ACL_GET_PERM_NP
 

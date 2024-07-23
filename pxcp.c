@@ -83,8 +83,8 @@ dev_t d_dev = 0;
 #define MD_CONTENT  0x00F0
 #define MD_METADATA 0xFF00
 
-#ifndef HAVE_ACL_GET_PERM_NP
-#define acl_get_perm_np(ps,p) ((ps & p) != 0)
+#if !HAVE_ACL_GET_PERM_NP && HAVE_ACL_GET_PERM
+#define acl_get_perm_np(ps,p) acl_get_perm(ps,p)
 #endif
 
 
