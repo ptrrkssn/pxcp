@@ -12,6 +12,11 @@ clean distclean:
 	-rm -f core *.o pxcp; find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
 
 
+# Check targets
+check:	pxcp
+	./pxcp -nvm . .
+
+
 # Git targets
 push: 	distclean
 	git add -A && git commit -a && git push
