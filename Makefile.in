@@ -47,7 +47,7 @@ pxcp: $(PXCP_OBJS)
 configure: configure.ac
 	autoconf
 
-config.h.in: configure
+config.h.in: configure.ac
 	autoheader
 
 config.h: config.h.in config.status
