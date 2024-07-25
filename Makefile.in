@@ -34,12 +34,13 @@ VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --sh
 
 PROGRAMS =	        pxcp
 
-PXCP_OBJS =             pxcp.o
+PXCP_OBJS =             pxcp.o fsobj.o acls.o
 
 all: $(PROGRAMS)
 
-
-pxcp.o: pxcp.c config.h
+acls.o:  acls.c acls.h config.h
+fsobj.o: fsobj.c fsobj.h config.h
+pxcp.o:  pxcp.c acls.h config.h
 
 pxcp: $(PXCP_OBJS)
 	$(CC) $(LDFLAGS) -o pxcp $(PXCP_OBJS) $(LIBS)
@@ -50,9 +51,6 @@ configure: configure.ac
 config.h.in: configure.ac
 	autoheader
 
-config.h: config.h.in config.status
-	./config.status
-
 
 clean:
 	-rm -f core *.o pxcp; find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
@@ -61,8 +59,13 @@ distclean: clean
 	rm -fr config.status config.log autom4te.cache Makefile config.h
 
 # Check targets
-check:	pxcp
-	./pxcp -nvm . .
+setup-check: t
+	mkdir -p t/s t/s/d t/d
+	touch t/s/f.txt
+	echo "Hello" >t/s/d/f2.txt
+
+check:	pxcp setup-check
+	./pxcp -vm t/s t/d
 
 
 # Git targets
