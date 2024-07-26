@@ -59,10 +59,8 @@ distclean: clean
 	rm -fr config.status config.log autom4te.cache Makefile config.h t
 
 # Check targets
-setup-check: t
-	mkdir -p t/s t/s/d t/d
-	touch t/s/f.txt
-	echo "Hello" >t/s/d/f2.txt
+setup-check:
+	rm -fr t && mkdir -p t/s t/s/d t/d && touch t/s/f.txt && echo "Hello" >t/s/d/f2.txt
 
 check:	pxcp setup-check
 	./pxcp -vm t/s t/d
