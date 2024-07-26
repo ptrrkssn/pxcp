@@ -87,6 +87,9 @@ int f_force = 0;
 int f_mmap = 0;
 int f_all = 0;
 
+int my_groups = 0;
+gid_t *my_groupv = NULL;
+
 struct options {
     char c;
     int *vp;
@@ -144,6 +147,15 @@ unsigned long n_deleted = 0;
 #endif
 
 
+int
+in_grouplist(gid_t g) {
+    int i;
+
+    for (i = 0; i < my_groups; i++)
+	if (g == my_groupv[i])
+	    return 1;
+    return 0;
+}
 
 
 int
@@ -182,12 +194,12 @@ file_copyto(FSOBJ *src,
     }
 
     if (src->flags & O_PATH)
-	fsobj_reopen(src, O_RDONLY|O_NOFOLLOW);
+	fsobj_reopen(src, O_RDONLY|O_NOFOLLOW|O_DIRECT);
 
     if (!f_dryrun) {
 	fsobj_init(&t_obj);
 
-	if (fsobj_open(&t_obj, dstdir, tmpname, (f_create ? O_CREAT : 0)|O_WRONLY, 0600) <= 0) {
+	if (fsobj_open(&t_obj, dstdir, tmpname, (f_create ? O_CREAT : 0)|O_WRONLY|O_DIRECT, 0600) <= 0) {
 	    fprintf(stderr, "%s: Error: %s/%s: create: %s\n",
 		    argv0, fsobj_path(dstdir), tmpname, strerror(errno));
 	    rc = -1;
@@ -941,9 +953,16 @@ dir_clone(FSOBJ *srcdir,
 			pbuf[plen] = '\0';
 			
 			if (symlinkat(pbuf, dstdir->fd, s_obj.name) < 0) {
-			    fprintf(stderr, "%s: Error: %s/%s -> %s: symlinkat: %s\n",
+			    fprintf(stderr, "%s: Error: %s/%s -> %s: Create(symlink): %s\n",
 				    argv0, fsobj_path(dstdir), s_obj.name,
 				    pbuf,
+				    strerror(errno));
+			    rc = -1;
+			    goto End;
+			}
+			if (fsobj_open(&d_obj, dstdir, s_obj.name, O_PATH) < 0) {
+			    fprintf(stderr, "%s: Error: %s/%s: Open(symlink): %s\n",
+				    argv0, fsobj_path(dstdir), s_obj.name,
 				    strerror(errno));
 			    rc = -1;
 			    goto End;
@@ -1047,33 +1066,45 @@ dir_clone(FSOBJ *srcdir,
 	}
 
 	if (f_owner && (f_force || s_obj.stat.st_uid != d_obj.stat.st_uid)) {
-	    if (!f_dryrun) {
-		if (fchownat(d_obj.fd, "", s_obj.stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
-		    fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
-			    argv0,
-			    fsobj_path(&d_obj),
-			    s_obj.stat.st_uid,
-			    strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
+	    if (geteuid() != 0) {
+		if (f_warnings)
+		    fprintf(stderr, "%s: Warning: %s: Owner Change not Permitted\n",
+			    argv0, fsobj_path(&d_obj));;
+	    } else {
+		if (!f_dryrun) {
+		    if (fchownat(d_obj.fd, "", s_obj.stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
+			fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
+				argv0,
+				fsobj_path(&d_obj),
+				s_obj.stat.st_uid,
+				strerror(errno));
+			rc = -1;
+			goto End;
+		    }
+		    }
+		mdiff |= MD_UID;
 	    }
-	    mdiff |= MD_UID;
 	}
-
+	
 	if (f_group && (f_force || s_obj.stat.st_gid != d_obj.stat.st_gid)) {
-	    if (!f_dryrun) {
-		if (fchownat(d_obj.fd, "", -1, s_obj.stat.st_gid, AT_EMPTY_PATH) < 0) {
-		    fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
-			    argv0,
-			    fsobj_path(&d_obj),
-			    s_obj.stat.st_gid,
-			    strerror(errno));
-		    rc = -1;
-		    goto End;
+	    if (geteuid() != 0 && !in_grouplist(s_obj.stat.st_gid)) {
+		if (f_warnings)
+		    fprintf(stderr, "%s: Warning: %s: Group Change not Permitted\n",
+			    argv0, fsobj_path(&d_obj));;
+	    } else {
+		if (!f_dryrun) {
+		    if (fchownat(d_obj.fd, "", -1, s_obj.stat.st_gid, AT_EMPTY_PATH) < 0) {
+			fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
+				argv0,
+				fsobj_path(&d_obj),
+				s_obj.stat.st_gid,
+				strerror(errno));
+			rc = -1;
+			goto End;
+		    }
 		}
+		mdiff |= MD_GID;
 	    }
-	    mdiff |= MD_GID;
 	}
 
 	if (f_force || (s_obj.stat.st_mode&ALLPERMS) != (d_obj.stat.st_mode&ALLPERMS)) {
@@ -1319,6 +1350,16 @@ main(int argc,
 	exit(1);
     }
 
+    if (f_group && geteuid() != 0) {
+	my_groups = getgroups(0, NULL);
+
+	my_groupv = calloc(my_groups, sizeof(gid_t));
+	if (!my_groupv) {
+	    fprintf(stderr, "%s: Error: %ld: Memory Allocation Failure: %s\n",
+		    argv0, my_groups*sizeof(gid_t), strerror(errno));
+	    exit(1);
+	}
+    }
 
     fsobj_init(&root_srcdir);
     fsobj_init(&root_dstdir);
