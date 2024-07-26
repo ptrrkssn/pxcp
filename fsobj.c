@@ -31,6 +31,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef __linux__
+#define _GNU_SOURCE
+#endif
+
 #include "config.h"
 #include "fsobj.h"
 
@@ -41,10 +45,16 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <time.h>
 #include <dirent.h>
 
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
+#endif
+
+
+#if !HAVE_FUNLINKAT
+#define funlinkat(dirfd,name,fd,flags) unlinkat(dirfd,name,flags)
 #endif
 
 
@@ -69,12 +79,12 @@ fsobj_reset(FSOBJ *obp) {
     /* Make sure no references to this object */
     if (obp->refcnt > 0)
 	abort();
-    
+
     if (obp->fd >= 0) {
 	close(obp->fd);
 	obp->fd = -1;
     }
-    
+
     if (obp->name) {
 	free((void *) obp->name);
 	obp->name = NULL;
@@ -84,7 +94,7 @@ fsobj_reset(FSOBJ *obp) {
 	free((void *) obp->path);
 	obp->path = NULL;
     }
-    
+
     if (obp->parent) {
 	obp->parent->refcnt--;
 	obp->parent = NULL;
@@ -96,7 +106,7 @@ fsobj_reset(FSOBJ *obp) {
 	obp->dbufpos = 0;
 	obp->dbuflen = 0;
     }
-	
+
     obp->flags = 0;
     memset(&obp->stat, 0, sizeof(obp->stat));
 }
@@ -156,15 +166,17 @@ fsobj_open(FSOBJ *obp,
 
     if (flags & O_CREAT) {
 	int mode;
-	
+
 	va_start(ap, flags);
 	mode = va_arg(ap, int);
-	
+
 	if (flags & O_DIRECTORY) {
 	    /* Create a new directory, ok if it already exists */
 	    if (mkdirat(parent ? parent->fd : AT_FDCWD, name, mode) < 0 && errno != EEXIST)
 		return -1;
-	    fd = openat(parent ? parent->fd : AT_FDCWD, name, flags|O_NOFOLLOW|AT_RESOLVE_BENEATH);
+
+            flags &= ~O_CREAT;
+	    fd = openat(parent ? parent->fd : AT_FDCWD, name, flags|O_NOFOLLOW|AT_RESOLVE_BENEATH, mode);
 	} else
 	    fd = openat(parent ? parent->fd : AT_FDCWD, name, flags|O_NOFOLLOW|AT_RESOLVE_BENEATH, mode);
 	va_end(ap);
@@ -181,16 +193,16 @@ fsobj_open(FSOBJ *obp,
 	close(fd);
 	return -1;
     }
-	    
+
     obp->parent = parent;
     if (parent)
 	parent->refcnt++;
-    
+
     obp->fd = fd;
     obp->flags = flags;
     obp->stat = sb;
     obp->name = strdup(name);
-    
+
     return (sb.st_mode & S_IFMT);
 }
 
@@ -199,7 +211,7 @@ fsobj_fake(FSOBJ *dst,
 	   FSOBJ *dstdir,
 	   const FSOBJ *src) {
     fsobj_reset(dst);
-    
+
     dst->flags = O_PATH;
     dst->name = strdup(src->name);
     dst->stat = src->stat;
@@ -224,7 +236,7 @@ fsobj_equal(const FSOBJ *a,
 	    const FSOBJ *b) {
     if (!fsobj_isopen(a) || !fsobj_isopen(b))
 	return -1;
-    
+
     return ((a->stat.st_dev == b->stat.st_dev) &&
 	    (a->stat.st_ino == b->stat.st_ino));
 }
@@ -235,18 +247,18 @@ fsobj_path(FSOBJ *obp) {
     size_t blen = 0;
     FSOBJ *tp;
     int rc;
-    
+
 
     rc = fsobj_isopen(obp);
     if (rc < 0)
 	return NULL;
-    
+
     if (!obp->name)
 	return NULL;
-    
+
     if (obp->path)
 	return obp->path;
-    
+
     tp = obp;
     for (tp = obp; tp; tp = tp->parent) {
 	blen += strlen(tp->name)+1;
@@ -256,13 +268,13 @@ fsobj_path(FSOBJ *obp) {
     if (!obp->path)
 	return NULL;
     obp->path[--blen] = '\0';
-    
+
     for (tp = obp; tp; tp = tp->parent) {
 	size_t slen = strlen(tp->name);
 
 	if (tp != obp)
 	    obp->path[--blen] = '/';
-	
+
 	memcpy(obp->path+blen-slen, tp->name, slen);
 	blen -= slen;
     }
@@ -284,33 +296,36 @@ fsobj_reopen(FSOBJ *obp,
     if (rc < 0)
 	return -1;
 
-    if (obp->fd == -1) 
+#ifdef O_EMPTY_PATH
+    if (obp->fd == -1)
 	nfd = openat(obp->fd, "", O_EMPTY_PATH|flags);
-    else if (obp->parent && obp->parent->fd != -1)
+    else
+#endif
+      if (obp->parent && obp->parent->fd != -1)
 	nfd = openat(obp->parent->fd, obp->name, flags);
     else {
 	nfd = -1;
 	errno = EBADF;
     }
-    
+
     if (nfd < 0)
 	return -1;
-    
+
     if (fstatat(nfd, "", &obp->stat, AT_EMPTY_PATH) < 0) {
 	close(nfd);
 	return -1;
     }
-    
+
     if (dup2(nfd, obp->fd) < 0) {
 	close(nfd);
 	return -1;
     }
-    
+
     obp->flags = flags;
-    
+
     if (close(nfd) < 0)
 	return -1;
-    
+
     return 0;
 }
 
@@ -322,7 +337,7 @@ fsobj_delete(FSOBJ *obp) {
     else if (rc == 0) {
 	return 0;
     }
-    
+
     if (funlinkat(obp->parent->fd, obp->name, obp->fd, AT_RESOLVE_BENEATH|(S_ISDIR(obp->stat.st_mode) ? AT_REMOVEDIR : 0)) < 0)
 	return -1;
 
@@ -338,8 +353,9 @@ fsobj_rewind(FSOBJ *obp) {
 
     if (rc <= 0)
 	return rc;
-    
-    return lseek(obp->fd, 0, SEEK_SET);
+
+    obp->fdpos = 0;
+    return lseek(obp->fd, obp->fdpos, SEEK_SET);
 }
 
 #define DIRBUFSIZE ((sizeof(struct dirent)+MAXNAMLEN+1)*256)
@@ -367,25 +383,25 @@ fsobj_readdir(FSOBJ *dirp, FSOBJ *objp) {
  Again:
     if (dirp->dbufpos >= dirp->dbuflen) {
 	dirp->dbufpos = 0;
-	
-	rc = getdirentries(dirp->fd, dirp->dbuf, bufsize, NULL);
+
+	rc = getdirentries(dirp->fd, dirp->dbuf, bufsize, &dirp->fdpos);
 	if (rc <= 0) {
 	    dirp->dbuflen = 0;
 	    return rc;
 	}
-	
+
 	dirp->dbuflen = rc;
     }
 
     dep = (struct dirent *) (dirp->dbuf+dirp->dbufpos);
     dirp->dbufpos += dep->d_reclen;
-    
+
     if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' || (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
 	goto Again;
-    
+
     fsobj_reset(objp);
     rc = fsobj_open(objp, dirp, dep->d_name, O_PATH);
-    
+
     return rc >= 0 ? 1 : -1;
 }
 
@@ -394,11 +410,11 @@ int
 fsobj_rename(FSOBJ *obp,
 	     char *name) {
     int rc = 0;
-    
+
 
     if (!obp || obp->magic != FSOBJ_MAGIC)
 	abort();
-    
+
     if (renameat(obp->parent ? obp->parent->fd : AT_FDCWD,
 		 obp->name,
 		 obp->parent ? obp->parent->fd : AT_FDCWD,
@@ -415,6 +431,6 @@ fsobj_rename(FSOBJ *obp,
     obp->name = strdup(name);
     if (!obp->name)
 	abort();
-    
+
     return rc;
 }

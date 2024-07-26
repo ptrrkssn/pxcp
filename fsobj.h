@@ -48,6 +48,7 @@ typedef struct fsobj {
     char *name;
     char *path;
     int fd;
+    off_t fdpos;
     int flags;
     struct stat stat;
     size_t refcnt;
