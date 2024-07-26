@@ -41,6 +41,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -69,10 +70,11 @@
 int f_debug = 0;
 int f_verbose = 0;
 int f_noxdev = 0;
-int f_update = 1;
+int f_dryrun = 0;
 int f_recurse = 0;
 int f_create = 0;
 int f_metaonly = 0;
+int f_warnings = 0;
 int f_silent = 0;
 int f_ignore = 0;
 int f_times = 0;
@@ -83,6 +85,36 @@ int f_xattr = 0;
 int f_prune = 0;
 int f_force = 0;
 int f_mmap = 0;
+int f_all = 0;
+
+struct options {
+    char c;
+    int *vp;
+    char *help;
+} options[] = {
+    { 'a', &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
+    { 'c', &f_create,    "Create new objects" },
+    { 'd', &f_debug,     "Set debugging outputlevel" },
+    { 'f', &f_force,     "Force updates" },
+    { 'g', &f_group,     "Copy object group" },
+    { 'h', NULL,         "Display usage information" },
+    { 'm', &f_metaonly,  "Only copy metadata" },
+    { 'n', &f_dryrun,    "Enable dry-run mode" },
+    { 'o', &f_owner,     "Copy object owner" },
+    { 'p', &f_prune,     "Prune removed objects" },
+    { 'r', &f_recurse,   "Enable recursion" },
+#if 0
+    { 's', &f_silent,    "Be silent" },
+#endif
+    { 't', &f_times,     "Copy modfication times" },
+    { 'v', &f_verbose,   "Set verbosity level" },
+    { 'w', &f_warnings,  "Display warnings/notices" },
+    { 'x', &f_noxdev,    "Do not cross filesystems" },
+    { 'A', &f_acl,       "Copy ACLs" },
+    { 'M', &f_mmap,      "Use mmap(2)" },
+    { 'X', &f_xattr,     "Copy Extended Attributes" },
+    { -1,  NULL,         NULL }
+};
 
 char *argv0 = "pxcp";
 
@@ -152,10 +184,10 @@ file_copyto(FSOBJ *src,
     if (src->flags & O_PATH)
 	fsobj_reopen(src, O_RDONLY|O_NOFOLLOW);
 
-    if (f_update) {
+    if (!f_dryrun) {
 	fsobj_init(&t_obj);
 
-	if (fsobj_open(&t_obj, dstdir, tmpname, O_CREAT|O_WRONLY, 0600) <= 0) {
+	if (fsobj_open(&t_obj, dstdir, tmpname, (f_create ? O_CREAT : 0)|O_WRONLY, 0600) <= 0) {
 	    fprintf(stderr, "%s: Error: %s/%s: create: %s\n",
 		    argv0, fsobj_path(dstdir), tmpname, strerror(errno));
 	    rc = -1;
@@ -177,7 +209,7 @@ file_copyto(FSOBJ *src,
 
 	    madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
 
-	    if (f_update) {
+	    if (!f_dryrun) {
 		rc = write(t_obj.fd, bufp, src->stat.st_size);
 		if (rc < 0) {
 		    fprintf(stderr, "%s: Error: %s: write: %s\n",
@@ -195,7 +227,7 @@ file_copyto(FSOBJ *src,
 	    }
 	} else {
 	    while ((got = read(src->fd, buf, sizeof(buf))) > 0) {
-		if (f_update) {
+		if (!f_dryrun) {
 		    rc = write(t_obj.fd, buf, got);
 		    if (rc < 0) {
 			fprintf(stderr, "%s: Error: %s: write: %s\n",
@@ -221,7 +253,7 @@ file_copyto(FSOBJ *src,
 	}
     }
 
-    if (f_update) {
+    if (!f_dryrun) {
 	if (fsobj_rename(&t_obj, d_name) < 0) {
 	    fprintf(stderr, "%s: Error: %s -> %s: Rename: %s\n",
 		    argv0, fsobj_path(src), d_name, strerror(errno));
@@ -231,7 +263,7 @@ file_copyto(FSOBJ *src,
     }
 
     fsobj_reset(dst);
-    if (f_update)
+    if (!f_dryrun)
 	*dst = t_obj;
     else
 	dst->stat.st_size = src->stat.st_size;
@@ -335,7 +367,7 @@ dir_prune(FSOBJ *srcdir,
 
 	/* Delete destination object if source does not exist */
 	if (s_type == 0) {
-	    if (f_update) {
+	    if (!f_dryrun) {
 		if (fsobj_delete(&d_obj) < 0) {
 		    fprintf(stderr, "%s: Error: %s: Delete: %s\n",
 			    argv0, fsobj_path(&d_obj), strerror(errno));
@@ -445,7 +477,7 @@ attrs_clone(FSOBJ *src,
 		    break;
 	    }
 	    if (s_i >= s_alen) {
-		if (f_update) {
+		if (!f_dryrun) {
 		    char *aname = strndup((char *) d_alist+d_i, d_anlen);
 
 		    if (!aname) {
@@ -571,7 +603,7 @@ attrs_clone(FSOBJ *src,
 		    }
 
 		    if (memcmp(d_adata, s_adata, s_adlen) != 0) {
-			if (f_update) {
+			if (!f_dryrun) {
 			    if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
 				fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
 					argv0, fsobj_path(dst), aname, strerror(errno));
@@ -589,7 +621,7 @@ attrs_clone(FSOBJ *src,
 		    free(d_adata);
 		    d_adata = NULL;
 		} else {
-		    if (f_update) {
+		    if (!f_dryrun) {
 			if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
 			    fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
 				    argv0, fsobj_path(dst), aname, strerror(errno));
@@ -604,7 +636,7 @@ attrs_clone(FSOBJ *src,
 		    rc = 1;
 		}
 	    } else {
-		if (f_update) {
+		if (!f_dryrun) {
 		    if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
 			fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
 				argv0, fsobj_path(dst), aname, strerror(errno));
@@ -654,7 +686,7 @@ ts_text(struct timespec *ts,
     struct tm *tp;
 
     tp = localtime(&ts->tv_sec);
-    strftime(buf, bufsize, "%D %T", tp);
+    strftime(buf, bufsize, "%F %T", tp);
 
     cp = buf;
     while (*cp) {
@@ -686,7 +718,7 @@ copy_times(FSOBJ *src,
 #if HAVE_UTIMENSAT
 #if HAVE_STRUCT_STAT_ST_BIRTHTIM_TV_SEC
     if (f_force || ts_isless(&dst->stat.st_birthtim, &src->stat.st_birthtim)) {
-	if (f_update) {
+	if (!f_dryrun) {
 	    struct timespec times[2];
 
 	    times[0].tv_nsec = UTIME_OMIT;
@@ -702,9 +734,9 @@ copy_times(FSOBJ *src,
     }
 #endif
     if (f_force || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
-	if (f_update) {
+	if (!f_dryrun) {
 	    struct timespec times[2];
-
+	    
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_mtim;
 
@@ -826,105 +858,114 @@ dir_clone(FSOBJ *srcdir,
 			s_obj.stat.st_mode&S_IFMT,
 			d_obj.stat.st_mode&S_IFMT);
 
-	    if (d_type == S_IFDIR) {
-		/* If directory, make sure it's empty */
-		if (dir_prune(NULL, &d_obj) < 0) {
-		    rc = -1;
-		    goto End;
+	    if (!f_metaonly) {
+		if (d_type == S_IFDIR) {
+		    /* If directory, make sure it's empty */
+		    if (dir_prune(NULL, &d_obj) < 0) {
+			rc = -1;
+			goto End;
+		    }
 		}
-	    }
 
-	    if (f_update) {
-		/* Remove the destination object */
-		if (fsobj_delete(&d_obj) < 0) {
-		    fprintf(stderr, "%s: Error: %s: Delete: %s\n",
-			    argv0, fsobj_path(&d_obj), strerror(errno));
-		    rc = -1;
-		    goto End;
+		if (!f_dryrun) {
+		    /* Remove the destination object */
+		    if (fsobj_delete(&d_obj) < 0) {
+			fprintf(stderr, "%s: Error: %s: Delete: %s\n",
+				argv0, fsobj_path(&d_obj), strerror(errno));
+			rc = -1;
+			goto End;
+		    }
 		}
+		
+		if (f_verbose)
+		    printf("- %s\n", fsobj_path(&d_obj));
 	    }
-
-	    if (f_verbose)
-		printf("- %s\n", fsobj_path(&d_obj));
-
+		
 	    fsobj_reset(&d_obj);
 	    d_type = 0;
 	}
 
 	if (d_type == 0) {
 	    /* Destination object does not exist */
-	    if (f_update) {
-		switch (s_type) {
-		case S_IFDIR:
+	    if (!f_create)
+		goto Next;
+	    
+	    if (!f_metaonly) {
+		if (!f_dryrun) {
+		    switch (s_type) {
+		    case S_IFDIR:
+			if (f_debug)
+			    fprintf(stderr, "** %s/%s: Destination is new directory\n",
+				    fsobj_path(dstdir),
+				    s_obj.name);
+			
+			if (fsobj_open(&d_obj, dstdir, s_obj.name, (f_create ? O_CREAT : 0)|O_DIRECTORY,
+				       (s_obj.stat.st_mode&ALLPERMS)) < 0) {
+			    fprintf(stderr, "%s: Error: %s/%s: mkdirat: %s\n",
+				    argv0, fsobj_path(dstdir), s_obj.name, strerror(errno));
+			    rc = -1;
+			    goto End;
+			}
+			break;
+			
+		    case S_IFREG:
+			if (f_debug)
+			    fprintf(stderr, "** %s/%s: Destination is new file\n",
+				    fsobj_path(dstdir),
+				    s_obj.name);
+			
+			if (!f_metaonly) {
+			    if (file_copyto(&s_obj, &d_obj, dstdir) < 0) {
+				rc = -1;
+				goto End;
+			    }
+			}
+			break;
+			
+		    case S_IFLNK:
+			char pbuf[PATH_MAX+1];
+			ssize_t plen;
+			
+			if (f_debug)
+			    fprintf(stderr, "** %s/%s: Destination is new symbolic link\n",
+				    fsobj_path(dstdir),
+				    s_obj.name);
+			
+			plen = readlinkat(srcdir->fd, s_obj.name, pbuf, PATH_MAX);
+			if (plen < 0) {
+			    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
+				    argv0, fsobj_path(&s_obj), strerror(errno));
+			    rc = -1;
+			    goto End;
+			}
+			pbuf[plen] = '\0';
+			
+			if (symlinkat(pbuf, dstdir->fd, s_obj.name) < 0) {
+			    fprintf(stderr, "%s: Error: %s/%s -> %s: symlinkat: %s\n",
+				    argv0, fsobj_path(dstdir), s_obj.name,
+				    pbuf,
+				    strerror(errno));
+			    rc = -1;
+			    goto End;
+			}
+			break;
+			
+		    default:
+			fprintf(stderr, "%s: Error: %s: Unhandled file type: %o\n",
+				argv0, fsobj_path(&s_obj), s_type);
+			rc = -1;
+			goto End;
+		    }
+		} else {
+		    /* Dry-run, simulate that we created the same object */
+		    d_type = fsobj_fake(&d_obj, dstdir, &s_obj);
+		    
 		    if (f_debug)
-			fprintf(stderr, "** %s/%s: Destination is new directory\n",
-				fsobj_path(dstdir),
-				s_obj.name);
-
-		    if (fsobj_open(&d_obj, dstdir, s_obj.name, O_CREAT|O_DIRECTORY,
-				   (s_obj.stat.st_mode&ALLPERMS)) < 0) {
-			fprintf(stderr, "%s: Error: %s/%s: mkdirat: %s\n",
-				argv0, fsobj_path(dstdir), s_obj.name, strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		    break;
-
-		case S_IFREG:
-		    if (f_debug)
-			fprintf(stderr, "** %s/%s: Destination is new file\n",
-				fsobj_path(dstdir),
-				s_obj.name);
-
-		    if (file_copyto(&s_obj, &d_obj, dstdir) < 0) {
-			rc = -1;
-			goto End;
-		    }
-		    break;
-
-		case S_IFLNK:
-		    char pbuf[PATH_MAX+1];
-		    ssize_t plen;
-
-		    if (f_debug)
-			fprintf(stderr, "** %s/%s: Destination is new symbolic link\n",
-				fsobj_path(dstdir),
-				s_obj.name);
-
-		    plen = readlinkat(srcdir->fd, s_obj.name, pbuf, PATH_MAX);
-		    if (plen < 0) {
-			fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
-				argv0, fsobj_path(&s_obj), strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		    pbuf[plen] = '\0';
-
-		    if (symlinkat(pbuf, dstdir->fd, s_obj.name) < 0) {
-			fprintf(stderr, "%s: Error: %s/%s -> %s: symlinkat: %s\n",
-				argv0, fsobj_path(dstdir), s_obj.name,
-				pbuf,
-				strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		    break;
-
-		default:
-		    fprintf(stderr, "%s: Error: %s: Unhandled file type: %o\n",
-			    argv0, fsobj_path(&s_obj), s_type);
-		    rc = -1;
-		    goto End;
+			fprintf(stderr, "%s <- %s: Faked object: type=%d\n",
+				fsobj_path(&d_obj), fsobj_path(&s_obj), d_type);
 		}
-	    } else {
-		/* Dry-run, simulate that we created the same object */
-		d_type = fsobj_fake(&d_obj, dstdir, &s_obj);
-
-                if (f_debug)
-                  fprintf(stderr, "%s <- %s: Faked object: type=%d\n",
-                          fsobj_path(&d_obj), fsobj_path(&s_obj), d_type);
+		mdiff |= MD_NEW;
 	    }
-	    mdiff |= MD_NEW;
 	} else {
 	    char s_tbuf[256], d_tbuf[256];
 
@@ -943,7 +984,7 @@ dir_clone(FSOBJ *srcdir,
 		if (f_force || s_obj.stat.st_size != d_obj.stat.st_size ||
 		    ts_isless(&d_obj.stat.st_mtim, &s_obj.stat.st_mtim)) {
 
-		    if (f_update) {
+		    if (!f_dryrun && !f_metaonly) {
 			if (file_copyto(&s_obj, &d_obj, NULL) < 0) {
 			    rc = -1;
 			    goto End;
@@ -958,6 +999,8 @@ dir_clone(FSOBJ *srcdir,
 		char d_buf[PATH_MAX+1];
 		ssize_t s_len, d_len;
 
+		/* XXX: f_metaonly - how to handle symlinks? */
+		
 		s_len = readlinkat(s_obj.parent->fd, s_obj.name, s_buf, PATH_MAX);
 		if (s_len < 0) {
 		    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
@@ -977,7 +1020,7 @@ dir_clone(FSOBJ *srcdir,
 		d_buf[d_len] = '\0';
 
 		if (s_len != d_len || strcmp(s_buf, d_buf) != 0) {
-		    if (f_update) {
+		    if (!f_dryrun) {
 			if (symlinkat(s_buf, d_obj.parent->fd, s_obj.name) < 0) {
 			    fprintf(stderr, "%s: Error: %s -> %s: symlinkat: %s\n",
 				    argv0,
@@ -1004,7 +1047,7 @@ dir_clone(FSOBJ *srcdir,
 	}
 
 	if (f_owner && (f_force || s_obj.stat.st_uid != d_obj.stat.st_uid)) {
-	    if (f_update) {
+	    if (!f_dryrun) {
 		if (fchownat(d_obj.fd, "", s_obj.stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
 		    fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
 			    argv0,
@@ -1019,7 +1062,7 @@ dir_clone(FSOBJ *srcdir,
 	}
 
 	if (f_group && (f_force || s_obj.stat.st_gid != d_obj.stat.st_gid)) {
-	    if (f_update) {
+	    if (!f_dryrun) {
 		if (fchownat(d_obj.fd, "", -1, s_obj.stat.st_gid, AT_EMPTY_PATH) < 0) {
 		    fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
 			    argv0,
@@ -1034,7 +1077,7 @@ dir_clone(FSOBJ *srcdir,
 	}
 
 	if (f_force || (s_obj.stat.st_mode&ALLPERMS) != (d_obj.stat.st_mode&ALLPERMS)) {
-	    if (f_update) {
+	    if (!f_dryrun) {
 #if __linux__
                   if (fchmodat(d_obj.parent->fd, d_obj.name, (s_obj.stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
 #else
@@ -1075,7 +1118,7 @@ dir_clone(FSOBJ *srcdir,
 		d_acl = acl_get_fd_np(d_obj.fd, d_t = ACL_TYPE_ACCESS);
 
 	    if (s_acl && (f_force || !d_acl || (rc = acl_diff(s_acl, d_acl)))) {
-		if (f_update) {
+		if (!f_dryrun) {
 		    fsobj_reopen(&d_obj, O_RDONLY|O_NOFOLLOW);
 		    if (acl_set_fd_np(d_obj.fd, s_acl, s_t) < 0) {
 			fprintf(stderr, "%s: Error: %s: acl_set_fd_np(fd=%d): %s\n",
@@ -1096,7 +1139,7 @@ dir_clone(FSOBJ *srcdir,
 		mdiff |= trc;
 	}
 
-	if (f_verbose > 1 || (f_verbose && mdiff)) {
+	if (f_verbose > 2 || (f_verbose && mdiff)) {
 	    if (mdiff & MD_NEW)
 		putchar('+');
 	    else if (mdiff & (MD_DATA|MD_MTIME|MD_BTIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID))
@@ -1122,8 +1165,9 @@ dir_clone(FSOBJ *srcdir,
 		int t_rc;
 
 		if (fsobj_equal(&s_obj, &root_dstdir)) {
-		    fprintf(stderr, "%s: Notice: %s: Infinite recursion - skipping\n",
-			    argv0, fsobj_path(&s_obj));
+		    if (f_warnings)
+			fprintf(stderr, "%s: Notice: %s: Infinite recursion - skipping\n",
+				argv0, fsobj_path(&s_obj));
 		    goto Next;
 		}
 
@@ -1133,11 +1177,16 @@ dir_clone(FSOBJ *srcdir,
 		    goto End;
 		}
 		if (f_times)
-		    copy_times(&s_obj, &d_obj);
+		    if (copy_times(&s_obj, &d_obj) < 0) {
+			fprintf(stderr, "%s: Error: %s -> %s: Copying times: %s\n",
+				argv0, fsobj_path(&s_obj), fsobj_path(&d_obj), strerror(errno));
+			exit(1);
+		    }
 	    }
 	    else {
-		fprintf(stderr, "** Skipping recursing down due to noxdev (%ld vs %ld)\n",
-			srcdir->stat.st_dev, s_obj.stat.st_dev);
+		if (f_warnings)
+		    fprintf(stderr, "%s: Notice: %s: Skipping recursing down due to noxdev (%ld vs %ld)\n",
+			    argv0, fsobj_path(&s_obj), s_obj.stat.st_dev, srcdir->stat.st_dev);
 		goto Next;
 	    }
 	}
@@ -1177,7 +1226,7 @@ dir_clone(FSOBJ *srcdir,
 int
 main(int argc,
      char *argv[]) {
-    int i, j, rc;
+    int i, j, k, rc;
     time_t t0, t1;
     double dt;
     char *tu = "s";
@@ -1187,104 +1236,72 @@ main(int argc,
 
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 	for (j = 1; argv[i][j]; j++) {
-            int v, rv = 0;
+            int rv, *vp = NULL;
             char c;
-
-            if (isalpha(argv[i][j])) {
-                rv = sscanf(argv[i]+j+1, "%d%c", &v, &c);
-                if (rv == 2)
-                    switch (c) {
-                    case 'k':
-                        v *= 1000;
-                        break;
-                    case 'm':
-                        v *= 1000000;
-                        break;
-                    case 'g':
-                        v *= 1000000000;
-                        break;
-                    default:
-                        fprintf(stderr, "%s: Error: -%s: Invalid number prefix\n",
-                                argv0, argv[i]+j);
-                        exit(1);
-                    }
-            }
-
-            switch (argv[i][j]) {
-	    case 'd':
-                if (rv > 0)
-                    f_debug = v;
-                else
-		    f_debug++;
-		break;
-	    case 'a':
-		f_recurse++;
-                f_create++;
-		f_owner++;
-		f_group++;
-		f_times++;
-		f_acl++;
-		f_xattr++;
-		break;
-	    case 'v':
-		f_verbose++;
-		break;
-	    case 'c':
-                f_create++;
-		break;
-            case 'm':
-                f_metaonly++;
-                break;
-            case 's':
-                f_silent++;
-                break;
-	    case 'f':
-		f_force++;
-		break;
-	    case 'n':
-		f_update = 0;
-		break;
-	    case 'x':
-		f_noxdev++;
-		break;
-	    case 'r':
-		f_recurse++;
-		break;
-	    case 'i':
-		f_ignore++;
-		break;
-	    case 't':
-		f_times++;
-		break;
-	    case 'u':
-		f_owner++;
-		break;
-	    case 'g':
-		f_group++;
-		break;
-	    case 'p':
-		f_prune++;
-		break;
-	    case 'A':
-		f_acl++;
-		break;
-	    case 'X':
-		f_xattr++;
-		break;
-	    case 'M':
-		f_mmap++;
-		break;
-	    case 'h':
-		printf("Usage:\n  %s [-hvfnxrpamAX] <srcdir> <dstdir>\n", argv[0]);
-		exit(0);
-	    default:
-		fprintf(stderr, "%s: Error: -%c: Invalid switch\n",
+	    
+	    for (k = 0; options[k].c != -1 && options[k].c != argv[i][j]; k++)
+		;
+	    if (options[k].c == -1) {
+		fprintf(stderr, "%s: Error: -%c: Invalid option\n",
 			argv[0], argv[i][j]);
 		exit(1);
+	    }
+
+	    vp = options[k].vp;
+	    if (!vp) {
+		printf("Usage:\n  %s [options] <src> <dst>\n\nOptions:\n", argv0);
+		for (k = 0; options[k].c != -1; k++)
+		    printf("  -%c    %s\n", options[k].c, options[k].help);
+		exit(0);
+	    }
+	    
+	    rv = sscanf(argv[i]+j+1, "%d%c", vp, &c);
+	    if (rv < 0 && isdigit(argv[i][j+1])) {
+		fprintf(stderr, "%s: Error: %s: Scanning number: %s\n",
+			argv0, argv[i]+j+1, strerror(errno));
+		exit(1);
+	    }
+	    
+	    switch (rv) {
+	    case -1:
+	    case 0:
+		 (*vp)++;
+		 break;
+	    case 1:
+		break;
+	    case 2:
+		switch (tolower(c)) {
+		case 'k':
+		    *vp *= 1000;
+		    break;
+		case 'm':
+		    *vp *= 1000000;
+		    break;
+		case 'g':
+		    *vp *= 1000000000;
+		    break;
+		case 't':
+		    *vp *= 1000000000000;
+		    break;
+		default:
+		    fprintf(stderr, "%s: Error: -%s: Invalid prefix\n",
+			    argv0, argv[i]+j);
+		    exit(1);
+		}
+		break;
 	    }
 	}
     }
 
+    if (f_all) {
+	f_create  += f_all;
+	f_group   += f_all;
+	f_owner   += f_all;
+	f_recurse += f_all;
+	f_times   += f_all;
+	f_acl     += f_all;
+	f_xattr   += f_all;
+    }
 
     if (f_verbose)
 	printf("[%s - Copyright (c) Peter Eriksson <pen@lysator.liu.se>]\n",
@@ -1314,7 +1331,8 @@ main(int argc,
 	exit(1);
     }
 
-    if (fsobj_open(&root_dstdir, NULL, argv[i+1], O_CREAT|O_RDONLY|O_DIRECTORY, root_srcdir.stat.st_mode&ALLPERMS) <= 0) {
+    if (fsobj_open(&root_dstdir, NULL, argv[i+1], (f_create ? O_CREAT : 0)|O_RDONLY|O_DIRECTORY,
+		   root_srcdir.stat.st_mode&ALLPERMS) <= 0) {
 	fprintf(stderr, "%s: Error: %s: open: %s\n",
 		argv[0], argv[i+1], strerror(errno));
 	exit(1);
