@@ -1,5 +1,5 @@
 AC_PREREQ([2.71])
-AC_INIT([PXCP],[0.0.1],[pen@lysator.liu.se],[pxcp],[https://github.com/ptrrkssn/pxcp])
+AC_INIT([PXCP],[0.1.0],[pen@lysator.liu.se],[pxcp],[https://github.com/ptrrkssn/pxcp])
 
 AC_CONFIG_SRCDIR([pxcp.c])
 AC_CONFIG_HEADERS([config.h])

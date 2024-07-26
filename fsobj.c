@@ -329,6 +329,26 @@ fsobj_reopen(FSOBJ *obp,
     return 0;
 }
 
+void
+fsobj_close(FSOBJ *obp) {
+    if (obp->fd >= 0) {
+	close(obp->fd);
+	obp->fd = -1;
+    }
+    
+    memset(&obp->stat, 0, sizeof(obp->stat));
+
+    obp->fdpos = 0;
+    obp->flags = 0;
+
+    if (obp->dbuf) {
+	free(obp->dbuf);
+	obp->dbuf = NULL;
+    }
+    obp->dbufpos = 0;
+    obp->dbuflen = 0;
+}
+
 int
 fsobj_delete(FSOBJ *obp) {
     int rc = fsobj_isopen(obp);
@@ -338,10 +358,12 @@ fsobj_delete(FSOBJ *obp) {
 	return 0;
     }
 
-    if (funlinkat(obp->parent->fd, obp->name, obp->fd, AT_RESOLVE_BENEATH|(S_ISDIR(obp->stat.st_mode) ? AT_REMOVEDIR : 0)) < 0)
+    if (funlinkat(obp->parent->fd, obp->name, obp->fd,
+		  AT_RESOLVE_BENEATH|(S_ISDIR(obp->stat.st_mode) ? AT_REMOVEDIR : 0)) < 0)
 	return -1;
 
-    fsobj_reset(obp);
+    fsobj_close(obp);
+    
     return 0;
 }
 

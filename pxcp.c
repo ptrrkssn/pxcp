@@ -821,14 +821,45 @@ dir_clone(FSOBJ *srcdir,
 	}
     }
 
-#if 0
-    if (f_prune)
-	dir_prune(srcdir, dstdir);
-#endif
-
     fsobj_init(&s_obj);
     fsobj_init(&d_obj);
 
+    if (f_prune) {
+#if 0
+	dir_prune(srcdir, dstdir);
+#else
+	if (f_debug)
+	    fprintf(stderr, "%s: Pruning Destination\n",
+		    fsobj_path(dstdir));
+	
+	while ((rc = fsobj_readdir(dstdir, &d_obj)) > 0) {
+	    int s_type = fsobj_open(&s_obj, srcdir, d_obj.name, O_PATH);
+	    if (s_type == 0) {
+		if (!f_dryrun) {
+		    if (fsobj_typeof(&d_obj) == S_IFDIR) {
+			if (dir_prune(NULL, &d_obj) < 0) {
+			    rc = -1;
+			    goto End;
+			}
+		    }
+		    if (fsobj_delete(&d_obj) < 0) {
+			fprintf(stderr, "%s: Error: %s: Delete: %s\n",
+				argv0, fsobj_path(&d_obj), strerror(errno));
+			rc = -1;
+			goto End;
+		    }
+		}
+		++n_deleted;
+		if (f_verbose)
+		    printf("- %s\n", fsobj_path(&d_obj));
+	    }
+	}
+	fsobj_reset(&s_obj);
+	fsobj_reset(&d_obj);
+    }
+#endif
+
+    fsobj_rewind(dstdir);
     fsobj_rewind(srcdir);
 
     if (f_debug)

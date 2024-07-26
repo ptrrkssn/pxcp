@@ -88,6 +88,9 @@ fsobj_fake(FSOBJ *dst,
 	   FSOBJ *dstdir,
 	   const FSOBJ *src);
 
+extern void
+fsobj_close(FSOBJ *obp);
+
 extern int
 fsobj_equal(const FSOBJ *a,
 	    const FSOBJ *b);
