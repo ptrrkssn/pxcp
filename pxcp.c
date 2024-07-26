@@ -71,6 +71,9 @@ int f_verbose = 0;
 int f_noxdev = 0;
 int f_update = 1;
 int f_recurse = 0;
+int f_create = 0;
+int f_metaonly = 0;
+int f_silent = 0;
 int f_ignore = 0;
 int f_times = 0;
 int f_owner = 0;
@@ -114,9 +117,8 @@ unsigned long n_deleted = 0;
 int
 ts_isless(struct timespec *a,
 	  struct timespec *b) {
-
     if (a->tv_sec == b->tv_sec)
-	return a->tv_nsec < b->tv_nsec;
+        return a->tv_nsec < b->tv_nsec;
     return a->tv_sec < b->tv_sec;
 }
 
@@ -1171,6 +1173,7 @@ dir_clone(FSOBJ *srcdir,
 
 
 
+
 int
 main(int argc,
      char *argv[]) {
@@ -1184,15 +1187,39 @@ main(int argc,
 
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 	for (j = 1; argv[i][j]; j++) {
-	    switch (argv[i][j]) {
+            int v, rv = 0;
+            char c;
+
+            if (isalpha(argv[i][j])) {
+                rv = sscanf(argv[i]+j+1, "%d%c", &v, &c);
+                if (rv == 2)
+                    switch (c) {
+                    case 'k':
+                        v *= 1000;
+                        break;
+                    case 'm':
+                        v *= 1000000;
+                        break;
+                    case 'g':
+                        v *= 1000000000;
+                        break;
+                    default:
+                        fprintf(stderr, "%s: Error: -%s: Invalid number prefix\n",
+                                argv0, argv[i]+j);
+                        exit(1);
+                    }
+            }
+
+            switch (argv[i][j]) {
 	    case 'd':
-		f_debug++;
+                if (rv > 0)
+                    f_debug = v;
+                else
+		    f_debug++;
 		break;
-	    case 'm':
-		f_prune++;
-		/* Fall-thru */
 	    case 'a':
 		f_recurse++;
+                f_create++;
 		f_owner++;
 		f_group++;
 		f_times++;
@@ -1202,6 +1229,15 @@ main(int argc,
 	    case 'v':
 		f_verbose++;
 		break;
+	    case 'c':
+                f_create++;
+		break;
+            case 'm':
+                f_metaonly++;
+                break;
+            case 's':
+                f_silent++;
+                break;
 	    case 'f':
 		f_force++;
 		break;
