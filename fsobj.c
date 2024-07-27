@@ -335,7 +335,7 @@ fsobj_close(FSOBJ *obp) {
 	close(obp->fd);
 	obp->fd = -1;
     }
-    
+
     memset(&obp->stat, 0, sizeof(obp->stat));
 
     obp->fdpos = 0;
@@ -363,7 +363,7 @@ fsobj_delete(FSOBJ *obp) {
 	return -1;
 
     fsobj_close(obp);
-    
+
     return 0;
 }
 
@@ -420,6 +420,8 @@ fsobj_readdir(FSOBJ *dirp, FSOBJ *objp) {
 
     if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' || (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
 	goto Again;
+
+    fprintf(stderr, "fsobj_readdir: %s\n", dep->d_name);
 
     fsobj_reset(objp);
     rc = fsobj_open(objp, dirp, dep->d_name, O_PATH);

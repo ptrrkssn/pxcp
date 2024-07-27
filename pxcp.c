@@ -71,8 +71,9 @@ int f_debug = 0;
 int f_verbose = 0;
 int f_noxdev = 0;
 int f_dryrun = 0;
+int f_sync = 0;
 int f_recurse = 0;
-int f_create = 0;
+int f_exist = 0;
 int f_metaonly = 0;
 int f_warnings = 0;
 int f_silent = 0;
@@ -96,8 +97,8 @@ struct options {
     char *help;
 } options[] = {
     { 'a', &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
-    { 'c', &f_create,    "Create new objects" },
     { 'd', &f_debug,     "Set debugging outputlevel" },
+    { 'e', &f_exist,     "Only copy to existing targets" },
     { 'f', &f_force,     "Force updates" },
     { 'g', &f_group,     "Copy object group" },
     { 'h', NULL,         "Display usage information" },
@@ -106,9 +107,7 @@ struct options {
     { 'o', &f_owner,     "Copy object owner" },
     { 'p', &f_prune,     "Prune removed objects" },
     { 'r', &f_recurse,   "Enable recursion" },
-#if 0
-    { 's', &f_silent,    "Be silent" },
-#endif
+    { 's', &f_sync,      "Set sync mode" },
     { 't', &f_times,     "Copy modfication times" },
     { 'v', &f_verbose,   "Set verbosity level" },
     { 'w', &f_warnings,  "Display warnings/notices" },
@@ -194,12 +193,12 @@ file_copyto(FSOBJ *src,
     }
 
     if (src->flags & O_PATH)
-	fsobj_reopen(src, O_RDONLY|O_NOFOLLOW|O_DIRECT);
+      fsobj_reopen(src, O_RDONLY|O_NOFOLLOW|(f_sync ? O_DIRECT : 0)|(f_sync > 1 ? (f_sync > 2 ? O_SYNC : O_DSYNC) : 0));
 
     if (!f_dryrun) {
 	fsobj_init(&t_obj);
 
-	if (fsobj_open(&t_obj, dstdir, tmpname, (f_create ? O_CREAT : 0)|O_WRONLY|O_DIRECT, 0600) <= 0) {
+	if (fsobj_open(&t_obj, dstdir, tmpname, (f_exist ? 0 : O_CREAT)|O_WRONLY|(f_sync ? O_DIRECT : 0)|(f_sync > 1 ? (f_sync > 2 ? O_SYNC : O_DSYNC) : 0), 0600) <= 0) {
 	    fprintf(stderr, "%s: Error: %s/%s: create: %s\n",
 		    argv0, fsobj_path(dstdir), tmpname, strerror(errno));
 	    rc = -1;
@@ -748,7 +747,7 @@ copy_times(FSOBJ *src,
     if (f_force || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
 	if (!f_dryrun) {
 	    struct timespec times[2];
-	    
+
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_mtim;
 
@@ -831,7 +830,7 @@ dir_clone(FSOBJ *srcdir,
 	if (f_debug)
 	    fprintf(stderr, "%s: Pruning Destination\n",
 		    fsobj_path(dstdir));
-	
+
 	while ((rc = fsobj_readdir(dstdir, &d_obj)) > 0) {
 	    int s_type = fsobj_open(&s_obj, srcdir, d_obj.name, O_PATH);
 	    if (s_type == 0) {
@@ -853,8 +852,9 @@ dir_clone(FSOBJ *srcdir,
 		if (f_verbose)
 		    printf("- %s\n", fsobj_path(&d_obj));
 	    }
+            fsobj_reset(&s_obj);
+            fsobj_reset(&d_obj);
 	}
-	fsobj_reset(&s_obj);
 	fsobj_reset(&d_obj);
     }
 #endif
@@ -863,7 +863,7 @@ dir_clone(FSOBJ *srcdir,
     fsobj_rewind(srcdir);
 
     if (f_debug)
-	fprintf(stderr, "%s: Scanning Source\n",
+	fprintf(stderr, "%s: Scanning Source Directory\n",
 		fsobj_path(srcdir));
 
     while ((rc = fsobj_readdir(srcdir, &s_obj)) > 0) {
@@ -888,8 +888,8 @@ dir_clone(FSOBJ *srcdir,
 	    d_type = 0;
 
 	if (f_debug)
-	    fprintf(stderr, " -- found destination object: %s (type %d, fd %d, errno %d)\n",
-		    d_obj.name, d_type, d_obj.fd, errno);
+	    fprintf(stderr, " -- found destination object: %s (type %d(%d), fd %d, errno %d)\n",
+		    d_obj.name, d_type, fsobj_typeof(&d_obj), d_obj.fd, errno);
 
 	if (d_type > 0 && s_type != d_type) {
 	    /* Different type objects, delete target and recreate */
@@ -919,20 +919,20 @@ dir_clone(FSOBJ *srcdir,
 			goto End;
 		    }
 		}
-		
+
 		if (f_verbose)
 		    printf("- %s\n", fsobj_path(&d_obj));
 	    }
-		
+
 	    fsobj_reset(&d_obj);
 	    d_type = 0;
 	}
 
 	if (d_type == 0) {
 	    /* Destination object does not exist */
-	    if (!f_create)
+	    if (f_exist)
 		goto Next;
-	    
+
 	    if (!f_metaonly) {
 		if (!f_dryrun) {
 		    switch (s_type) {
@@ -941,39 +941,40 @@ dir_clone(FSOBJ *srcdir,
 			    fprintf(stderr, "** %s/%s: Destination is new directory\n",
 				    fsobj_path(dstdir),
 				    s_obj.name);
-			
-			if (fsobj_open(&d_obj, dstdir, s_obj.name, (f_create ? O_CREAT : 0)|O_DIRECTORY,
+
+			if (fsobj_open(&d_obj, dstdir, s_obj.name, (f_exist ? 0 : O_CREAT)|O_DIRECTORY,
 				       (s_obj.stat.st_mode&ALLPERMS)) < 0) {
 			    fprintf(stderr, "%s: Error: %s/%s: mkdirat: %s\n",
 				    argv0, fsobj_path(dstdir), s_obj.name, strerror(errno));
 			    rc = -1;
 			    goto End;
-			}
+                        }
 			break;
-			
+
 		    case S_IFREG:
 			if (f_debug)
 			    fprintf(stderr, "** %s/%s: Destination is new file\n",
 				    fsobj_path(dstdir),
 				    s_obj.name);
-			
+
 			if (!f_metaonly) {
 			    if (file_copyto(&s_obj, &d_obj, dstdir) < 0) {
 				rc = -1;
 				goto End;
 			    }
+                            d_type = fsobj_typeof(&d_obj);
 			}
 			break;
-			
+
 		    case S_IFLNK:
 			char pbuf[PATH_MAX+1];
 			ssize_t plen;
-			
+
 			if (f_debug)
 			    fprintf(stderr, "** %s/%s: Destination is new symbolic link\n",
 				    fsobj_path(dstdir),
 				    s_obj.name);
-			
+
 			plen = readlinkat(srcdir->fd, s_obj.name, pbuf, PATH_MAX);
 			if (plen < 0) {
 			    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
@@ -982,7 +983,7 @@ dir_clone(FSOBJ *srcdir,
 			    goto End;
 			}
 			pbuf[plen] = '\0';
-			
+
 			if (symlinkat(pbuf, dstdir->fd, s_obj.name) < 0) {
 			    fprintf(stderr, "%s: Error: %s/%s -> %s: Create(symlink): %s\n",
 				    argv0, fsobj_path(dstdir), s_obj.name,
@@ -999,7 +1000,7 @@ dir_clone(FSOBJ *srcdir,
 			    goto End;
 			}
 			break;
-			
+
 		    default:
 			fprintf(stderr, "%s: Error: %s: Unhandled file type: %o\n",
 				argv0, fsobj_path(&s_obj), s_type);
@@ -1009,7 +1010,7 @@ dir_clone(FSOBJ *srcdir,
 		} else {
 		    /* Dry-run, simulate that we created the same object */
 		    d_type = fsobj_fake(&d_obj, dstdir, &s_obj);
-		    
+
 		    if (f_debug)
 			fprintf(stderr, "%s <- %s: Faked object: type=%d\n",
 				fsobj_path(&d_obj), fsobj_path(&s_obj), d_type);
@@ -1050,7 +1051,7 @@ dir_clone(FSOBJ *srcdir,
 		ssize_t s_len, d_len;
 
 		/* XXX: f_metaonly - how to handle symlinks? */
-		
+
 		s_len = readlinkat(s_obj.parent->fd, s_obj.name, s_buf, PATH_MAX);
 		if (s_len < 0) {
 		    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
@@ -1116,7 +1117,7 @@ dir_clone(FSOBJ *srcdir,
 		mdiff |= MD_UID;
 	    }
 	}
-	
+
 	if (f_group && (f_force || s_obj.stat.st_gid != d_obj.stat.st_gid)) {
 	    if (geteuid() != 0 && !in_grouplist(s_obj.stat.st_gid)) {
 		if (f_warnings)
@@ -1300,7 +1301,7 @@ main(int argc,
 	for (j = 1; argv[i][j]; j++) {
             int rv, *vp = NULL;
             char c;
-	    
+
 	    for (k = 0; options[k].c != -1 && options[k].c != argv[i][j]; k++)
 		;
 	    if (options[k].c == -1) {
@@ -1314,16 +1315,17 @@ main(int argc,
 		printf("Usage:\n  %s [options] <src> <dst>\n\nOptions:\n", argv0);
 		for (k = 0; options[k].c != -1; k++)
 		    printf("  -%c    %s\n", options[k].c, options[k].help);
+                puts("\nAll options may optionally take a numeric argument.");
 		exit(0);
 	    }
-	    
+
 	    rv = sscanf(argv[i]+j+1, "%d%c", vp, &c);
 	    if (rv < 0 && isdigit(argv[i][j+1])) {
 		fprintf(stderr, "%s: Error: %s: Scanning number: %s\n",
 			argv0, argv[i]+j+1, strerror(errno));
 		exit(1);
 	    }
-	    
+
 	    switch (rv) {
 	    case -1:
 	    case 0:
@@ -1356,7 +1358,6 @@ main(int argc,
     }
 
     if (f_all) {
-	f_create  += f_all;
 	f_group   += f_all;
 	f_owner   += f_all;
 	f_recurse += f_all;
@@ -1403,7 +1404,7 @@ main(int argc,
 	exit(1);
     }
 
-    if (fsobj_open(&root_dstdir, NULL, argv[i+1], (f_create ? O_CREAT : 0)|O_RDONLY|O_DIRECTORY,
+    if (fsobj_open(&root_dstdir, NULL, argv[i+1], (f_exist ? 0 : O_CREAT)|O_RDONLY|O_DIRECTORY,
 		   root_srcdir.stat.st_mode&ALLPERMS) <= 0) {
 	fprintf(stderr, "%s: Error: %s: open: %s\n",
 		argv[0], argv[i+1], strerror(errno));
