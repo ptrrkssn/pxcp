@@ -604,7 +604,7 @@ acl_set(FSOBJ *op,
         acl_t a,
         acl_type_t t) {
 #if HAVE_ACL_SET_FD_NP
-    if (op->fd >= 0)
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0)
         return acl_set_fd_np(op->fd, a, t);
 #endif
 #if HAVE_ACL_SET_LINK_NP
@@ -630,6 +630,7 @@ acls_clone(FSOBJ *src,
     acl_t s_acl = NULL, d_acl = NULL;
     acl_type_t s_t, d_t;
 
+    
 #ifdef ACL_TYPE_NFS4
     s_acl = acl_get(src, s_t = ACL_TYPE_NFS4);
 #endif
@@ -662,9 +663,9 @@ acls_clone(FSOBJ *src,
 
         if (!f_dryrun) {
             if (acl_set(dst, s_acl, s_t) < 0) {
-                fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s\n",
+                fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s [flags=0x%x]\n",
                         argv0, fsobj_path(dst),
-                        dst->fd, strerror(errno));
+                        dst->fd, strerror(errno), dst->flags);
                 rc = -1;
                 goto End;
             }
