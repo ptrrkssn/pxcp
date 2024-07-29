@@ -192,7 +192,7 @@ symlink_clone(FSOBJ *src,
         return -1;
     }
     s_pbuf[s_plen] = '\0';
-    
+
     d_plen = readlinkat(dst->parent->fd, dst->name, d_pbuf, PATH_MAX);
     if (d_plen < 0) {
 	if (errno != ENOENT) {
@@ -211,7 +211,7 @@ symlink_clone(FSOBJ *src,
 			argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
-	    
+
 	    if (symlinkat(s_pbuf, dst->parent->fd, dst->name) < 0) {
 		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
 			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
@@ -242,7 +242,7 @@ file_clone(FSOBJ *src,
 
     if (!f_force && src->stat.st_size == dst->stat.st_size && ts_isless(&src->stat.st_mtim, &dst->stat.st_mtim))
 	return 0;
-    
+
     if (src->flags & O_PATH)
 	fsobj_reopen(src, O_RDONLY|O_DIRECT);
 
@@ -252,13 +252,13 @@ file_clone(FSOBJ *src,
 	tmpname = tmppath;
 	tfd = mkostempsat(dst->parent->fd, tmpname, 0, O_DIRECT);
 #elif defined(HAVE_MKOSTEMP)
-	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXX", fsobj_path(dst->parent));
+	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
 	tmpname = strrchr(tmppath, '/');
 	if (tmpname)
 	    ++tmpname;
 	tfd = mkostemp(tmppath, O_DIRECT);
 #elif defined(HAVE_MKSTEMP)
-	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXX", fsobj_path(dst->parent));
+	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
 	tmpname = strrchr(tmppath, '/');
 	if (tmpname)
 	    ++tmpname;
@@ -276,7 +276,7 @@ file_clone(FSOBJ *src,
 		    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
 	    return -1;
 	}
-	
+
 	if (f_mmap) {
 	    if (src->stat.st_size > 0) {
 		bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
@@ -286,15 +286,15 @@ file_clone(FSOBJ *src,
 		    rc = -1;
 		    goto End;
 		}
-		
+
 		/* Ignore errors */
 		(void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-		
+
 		if (tfd >= 0) {
 		    wr = write(tfd, bufp, src->stat.st_size);
 		    if (wr < 0) {
 			int t_errno = errno;
-			
+
 			fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
 				argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
 			errno = t_errno;
@@ -303,7 +303,7 @@ file_clone(FSOBJ *src,
 		    }
 
 		    b_written += wr;
-		    
+
 		    if (wr != src->stat.st_size) {
 			fprintf(stderr, "%s: Error: %s/%s: Short write\n",
 				argv0, fsobj_path(dst->parent), tmpname);
@@ -319,28 +319,28 @@ file_clone(FSOBJ *src,
 
 	    if (ftruncate(tfd, src->stat.st_size) < 0) {
 		int t_errno = errno;
-		
+
 		fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
 			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
 		errno = t_errno;
 		rc = -1;
 		goto End;
 	    }
-	    
+
 	    while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
 		wr = write(tfd, buf, rr);
 		if (wr < 0) {
 		    int t_errno = errno;
-		    
+
 		    fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
 			    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
 		    errno = t_errno;
 		    rc = -1;
 		    goto End;
 		}
-		
+
 		b_written += wr;
-		
+
 		if (wr != rr) {
 		    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
 			    argv0, fsobj_path(dst->parent), tmpname);
@@ -352,7 +352,7 @@ file_clone(FSOBJ *src,
 	    }
 	    if (rr < 0) {
 		int t_errno = errno;
-		
+
 		fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
 			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
 		errno = t_errno;
@@ -360,12 +360,12 @@ file_clone(FSOBJ *src,
 		goto End;
 	    }
 	}
-	
+
 	close(tfd);
-	
+
 	if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
 	    int t_errno = errno;
-	    
+
 	    fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
 		    argv0,
 		    fsobj_path(dst->parent), tmpname,
@@ -376,7 +376,7 @@ file_clone(FSOBJ *src,
 	    goto End;
 	}
 	tmpname = NULL;
-	
+
 	fsobj_reopen(dst, O_PATH);
     }
     rc = 1;
@@ -700,7 +700,7 @@ acls_clone(FSOBJ *src,
         }
     }
 #endif
-    
+
  End:
     if (s_acl)
         acl_free(s_acl);
@@ -1040,7 +1040,7 @@ times_clone(FSOBJ *src,
 
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_birthtim;
-	    
+
 	    if (utimensat(dst->fd >= 0 ? dst->fd : dst->parent->fd,
 			  dst->fd >= 0 ? "" : dst->name,
 			  times,
@@ -1390,7 +1390,7 @@ clone(FSOBJ *src,
 int
 main(int argc,
      char *argv[]) {
-    int i, j, k, rc = 0;
+    int i, j, k, rc = 0, c_rc;
     char *tu = "s";
     char *wu = "B";
 
@@ -1528,17 +1528,19 @@ main(int argc,
 
     clock_gettime(CLOCK_REALTIME, &t0);
 
-    rc = clone(&root_srcdir, &root_dstdir);
-    if (rc)
+    c_rc = clone(&root_srcdir, &root_dstdir);
+    if (c_rc < 0) {
+        rc = 1;
 	goto End;
+    }
 
  End:
     if (f_verbose || f_stats) {
 	double wb, wps, dt0, dt1, dt, dts;
 	char *wbu;
-	
+
 	clock_gettime(CLOCK_REALTIME, &t1);
-	
+
 	dt0 = t0.tv_sec+t0.tv_nsec/1000000000.0;
 	dt1 = t1.tv_sec+t1.tv_nsec/1000000000.0;
 	dt = dts = dt1-dt0;
@@ -1588,7 +1590,7 @@ main(int argc,
 	    wps /= 1000;
 	    wu = "GB/s";
 	}
-	
+
 	printf("[%lu scanned in %.1f %s (%.0f/%s); %lu added (%.0f/s), %lu updated, %lu deleted; %.1f %s written (%.0f %s)]\n",
 	       n_scanned, dt, tu, n_scanned/dt, tu, n_added, n_added/dt, n_updated, n_deleted,
 	       wb, wbu, wps, wu);

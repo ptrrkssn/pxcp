@@ -35,7 +35,7 @@ AC_CHECK_FUNCS([extattr_get_fd])
 AC_CHECK_FUNCS([utimensat futimens])
 AC_CHECK_FUNCS([funlinkat unlinkat fchownat readlinkat symlinkat openat renameat fchmodat])
 AC_CHECK_FUNCS([getdirentries])
-AC_CHECK_FUNCS([mkostempsat mkstemps mkstemp])
+AC_CHECK_FUNCS([mkostempsat mkostemps mkostemp mkstemp])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
