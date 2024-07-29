@@ -169,22 +169,44 @@ ts_isless(struct timespec *a,
 ssize_t
 symlink_clone(FSOBJ *src,
               FSOBJ *dst) {
-    char pbuf[PATH_MAX+1];
-    ssize_t plen;
+    char s_pbuf[PATH_MAX+1], d_pbuf[PATH_MAX+1];
+    ssize_t s_plen, d_plen;
+    int rc = 0;
 
-
-    plen = readlinkat(src->parent->fd, src->name, pbuf, PATH_MAX);
-    if (plen < 0) {
+    s_plen = readlinkat(src->parent->fd, src->name, s_pbuf, PATH_MAX);
+    if (s_plen < 0) {
         fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
                 argv0, fsobj_path(src), strerror(errno));
         return -1;
     }
-    pbuf[plen] = '\0';
+    s_pbuf[s_plen] = '\0';
+    
+    d_plen = readlinkat(dst->parent->fd, dst->name, d_pbuf, PATH_MAX);
+    if (d_plen < 0) {
+	if (errno != ENOENT) {
+	    fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
+		    argv0, fsobj_path(dst), strerror(errno));
+	    return -1;
+	}
+    }
+    if (d_plen >= 0)
+	d_pbuf[d_plen] = '\0';
 
-    if (symlinkat(pbuf, dst->parent->fd, dst->name) < 0) {
-        fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
-                argv0, fsobj_path(src), fsobj_path(dst), strerror(errno));
-        return -1;
+    if (f_force || d_plen < 0 || strcmp(s_pbuf, d_pbuf) != 0) {
+	if (!f_dryrun) {
+	    if (d_plen >= 0 && unlinkat(dst->parent->fd, dst->name, AT_RESOLVE_BENEATH) < 0) {
+		fprintf(stderr, "%s: Error: %s: Unlink(symlink): %s\n",
+			argv0, fsobj_path(dst), strerror(errno));
+		return -1;
+	    }
+	    
+	    if (symlinkat(s_pbuf, dst->parent->fd, dst->name) < 0) {
+		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
+			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
+		return -1;
+	    }
+	}
+	rc = 1;
     }
 
     if (fsobj_refresh(dst) < 0) {
@@ -193,7 +215,7 @@ symlink_clone(FSOBJ *src,
         return -1;
     }
 
-    return plen;
+    return rc;
 }
 
 

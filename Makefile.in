@@ -67,19 +67,43 @@ setup-check-tree:
 
 setup-check: setup-check-tree setup-check-acl
 
-check:	pxcp setup-check
+check-1: setup-check
 	@echo ""; echo "--- Check 1: Cloning t/s -> t/d"
 	@./pxcp -vrA  t/s t/d && echo "--> OK"
-	@echo ""; echo "--- Check 2: ls -alR"
+
+check-2: check-1
+	@echo ""; echo "--- Check 2: Cloning t/s -> t/d (again)"
+	@./pxcp -vrA  t/s t/d && echo "--> OK"
+
+check-3: check-1
+	@echo ""; echo "--- Check 3: Cloning t/s -> t/d (again, with prune)"
+	@./pxcp -vrAp  t/s t/d && echo "--> OK"
+
+check-4: check-1
+	@echo ""; echo "--- Check 4: ls -alR"
 	@(cd t/s ; ls -alR .) >/tmp/pxcp-s.out && (cd t/d ; ls -alR .) >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
-	@echo ""; echo "--- Check 3: File Content"
+
+check-5: check-1
+	@echo ""; echo "--- Check 5: File Content"
 	@cat t/d/d/f2.txt && cmp t/s/d/f2.txt t/d/d/f2.txt && echo "--> OK"
-	@echo ""; echo "--- Check 3: ACL ACE entry copied"
+
+check-6: check-1
+	@echo ""; echo "--- Check 6: ACL ACE entry copied"
 	@getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"
-	@echo ""; echo "--- Check 4: Cloning t/e -> t/d"
+
+check-7: check-1
+	@echo ""; echo "--- Check 7: Cloning t/e -> t/d"
 	@./pxcp -vrAp t/e t/d && echo "--> OK"
-	@echo ""; echo "--- Check 5: t/d should be empty"
+
+check-8: check-7
+	@echo ""; echo "--- Check 8: Cloning t/e -> t/d (again)"
+	@./pxcp -vrAp t/e t/d && echo "--> OK"
+
+check-9: check-7
+	@echo ""; echo "--- Check 9: t/d should be empty"
 	@rmdir t/d && echo "--> OK"
+
+check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9
 	@echo ""; echo "All tests passed."
 
 
