@@ -60,10 +60,10 @@ distclean: clean
 
 # Check targets
 setup-check:
-	rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && echo "Hello" >t/s/d/f2.txt
+	rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && setfacl -m root:r t/s/f.txt && echo "Hello" >t/s/d/f2.txt
 
 check:	pxcp setup-check
-	./pxcp -va t/s t/d && ./pxcp -vap t/e t/d
+	./pxcp -vaA t/s t/d && ./pxcp -vaAp t/e t/d
 	rmdir t/d
 	@echo "All tests passed."
 

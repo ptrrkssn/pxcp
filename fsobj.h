@@ -55,6 +55,7 @@ typedef struct fsobj {
     char *dbuf;
     off_t dbufpos;
     size_t dbuflen;
+    size_t dbufsize;
 } FSOBJ;
 
 
@@ -68,10 +69,10 @@ extern void
 fsobj_fini(FSOBJ *obp);
 
 extern int
-fsobj_isopen(const FSOBJ *obp);
+fsobj_refresh(FSOBJ *op);
 
 extern int
-fsobj_isfake(const FSOBJ *obp);
+fsobj_isopen(const FSOBJ *obp);
 
 extern int
 fsobj_typeof(const FSOBJ *objp);
@@ -81,12 +82,17 @@ fsobj_open(FSOBJ *obp,
 	   FSOBJ *parent,
 	   const char *name,
 	   int flags,
-	   ...);
+	   mode_t mode);
 
 extern int
 fsobj_fake(FSOBJ *dst,
 	   FSOBJ *dstdir,
 	   const FSOBJ *src);
+
+extern int
+fsobj_mkdir(FSOBJ *op,
+            mode_t mode);
+
 
 extern void
 fsobj_close(FSOBJ *obp);

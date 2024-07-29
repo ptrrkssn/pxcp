@@ -107,7 +107,6 @@ acl_diff(acl_t src,
 	    return -1;
 	if (acl_get_tag_type(d_e, &d_t) < 0)
 	    return -1;
-
 	if (s_t != d_t)
 	    return 2;
 
@@ -215,7 +214,6 @@ acl_diff(acl_t src,
 	    if (s_p != d_p)
 		return 5;
 	}
-	break;
 #endif
 #endif
 

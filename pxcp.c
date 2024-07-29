@@ -79,10 +79,10 @@ int f_warnings = 0;
 int f_silent = 0;
 int f_ignore = 0;
 int f_times = 0;
-int f_owner = 0;
-int f_group = 0;
-int f_acl = 0;
-int f_xattr = 0;
+int f_owners = 0;
+int f_groups = 0;
+int f_acls = 0;
+int f_xattrs = 0;
 int f_prune = 0;
 int f_force = 0;
 int f_mmap = 0;
@@ -100,11 +100,11 @@ struct options {
     { 'd', &f_debug,     "Set debugging outputlevel" },
     { 'e', &f_exist,     "Only copy to existing targets" },
     { 'f', &f_force,     "Force updates" },
-    { 'g', &f_group,     "Copy object group" },
+    { 'g', &f_groups,    "Copy object group" },
     { 'h', NULL,         "Display usage information" },
     { 'm', &f_metaonly,  "Only copy metadata" },
     { 'n', &f_dryrun,    "Enable dry-run mode" },
-    { 'o', &f_owner,     "Copy object owner" },
+    { 'o', &f_owners,    "Copy object owner" },
     { 'p', &f_prune,     "Prune removed objects" },
     { 'r', &f_recurse,   "Enable recursion" },
     { 's', &f_sync,      "Set sync mode" },
@@ -112,9 +112,9 @@ struct options {
     { 'v', &f_verbose,   "Set verbosity level" },
     { 'w', &f_warnings,  "Display warnings/notices" },
     { 'x', &f_noxdev,    "Do not cross filesystems" },
-    { 'A', &f_acl,       "Copy ACLs" },
+    { 'A', &f_acls,      "Copy ACLs" },
     { 'M', &f_mmap,      "Use mmap(2)" },
-    { 'X', &f_xattr,     "Copy Extended Attributes" },
+    { 'X', &f_xattrs,    "Copy Extended Attributes" },
     { -1,  NULL,         NULL }
 };
 
@@ -128,9 +128,9 @@ unsigned long n_updated = 0;
 unsigned long n_deleted = 0;
 
 #define MD_NEW    0x0001
+#define MD_DEL    0x0002
 #define MD_DATA   0x0010
-#define MD_BTIME  0x0020
-#define MD_MTIME  0x0040
+#define MD_TIME   0x0020
 #define MD_MODE   0x0100
 #define MD_UID    0x0200
 #define MD_GID    0x0400
@@ -166,147 +166,139 @@ ts_isless(struct timespec *a,
 }
 
 
+ssize_t
+symlink_clone(FSOBJ *src,
+              FSOBJ *dst) {
+    char pbuf[PATH_MAX+1];
+    ssize_t plen;
 
-int
-file_copyto(FSOBJ *src,
-	     FSOBJ *dst,
-	     FSOBJ *dstdir) {
+
+    plen = readlinkat(src->parent->fd, src->name, pbuf, PATH_MAX);
+    if (plen < 0) {
+        fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
+                argv0, fsobj_path(src), strerror(errno));
+        return -1;
+    }
+    pbuf[plen] = '\0';
+
+    if (symlinkat(pbuf, dst->parent->fd, dst->name) < 0) {
+        fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
+                argv0, fsobj_path(src), fsobj_path(dst), strerror(errno));
+        return -1;
+    }
+
+    if (fsobj_refresh(dst) < 0) {
+        fprintf(stderr, "%s: Error: %s: Refresh(symlink): %s\n",
+                argv0, fsobj_path(dst), strerror(errno));
+        return -1;
+    }
+
+    return plen;
+}
+
+
+ssize_t
+file_clone(FSOBJ *src,
+           FSOBJ *dst) {
+    ssize_t wr, rc = 0;
+    char *bufp = MAP_FAILED;
     char *tmpname = ".pxcp_tmpfile"; /* XXX: Make dynamic */
-    ssize_t got, rc = 0;
-    FSOBJ t_obj;
-    char *d_name, *bufp = NULL, buf[65536];
+    int tfd = -1;
 
 
-    if (f_debug) {
-	fprintf(stderr, "*** file_copyto(%s -> %s%s%s)\n",
-		fsobj_path(src),
-		dstdir ? fsobj_path(dstdir) : fsobj_path(dst),
-		dstdir ? "/" : "",
-		dstdir ? src->name : "");
+    if (f_force || src->stat.st_size != dst->stat.st_size || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
+        if (src->flags & O_PATH)
+            fsobj_reopen(src, O_RDONLY);
+
+        if (!f_dryrun) {
+            tfd = openat(dst->parent->fd, tmpname, O_CREAT|O_EXCL|O_WRONLY, 0400);
+            if (tfd < 0) {
+                fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
+                        argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+                return -1;
+            }
+        }
+
+        if (src->stat.st_size > 0) {
+            bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
+            if (bufp == MAP_FAILED) {
+                fprintf(stderr, "%s: Error: %s: mmap(fd=%d, size=%ld): %s\n",
+                        argv0, fsobj_path(src),
+                        src->fd,
+                        src->stat.st_size,
+                        strerror(errno));
+                rc = -1;
+                goto End;
+            }
+
+            /* Ignore errors */
+            (void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+
+            if (!f_dryrun) {
+                wr = write(tfd, bufp, src->stat.st_size);
+                if (wr < 0) {
+                    int t_errno = errno;
+
+                    fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
+                            argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+                    munmap(bufp, src->stat.st_size);
+                    errno = t_errno;
+                    rc = -1;
+                    goto End;
+                }
+                if (wr != src->stat.st_size) {
+                    fprintf(stderr, "%s: Error: %s/%s: Short write (%ld of %ld bytes)\n",
+                            argv0, fsobj_path(dst->parent), tmpname,
+                            wr, src->stat.st_size);
+                    errno = EPIPE;
+                    rc = -1;
+                    goto End;
+                }
+                close(tfd);
+
+                if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
+                    int t_errno = errno;
+
+                    fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
+                            argv0,
+                            fsobj_path(dst->parent), tmpname,
+                            fsobj_path(dst->parent), dst->name,
+                            strerror(errno));
+                    errno = t_errno;
+                    rc = -1;
+                    goto End;
+                }
+                tmpname = NULL;
+
+                fsobj_reopen(dst, O_PATH);
+            }
+            rc = 1;
+        }
     }
-
-    if (dstdir) {
-	d_name = src->name;
-    } else {
-	dstdir = dst->parent;
-	d_name = dst->name;
-    }
-
-    if (src->flags & O_PATH)
-      fsobj_reopen(src, O_RDONLY|O_NOFOLLOW|(f_sync ? O_DIRECT : 0)|(f_sync > 1 ? (f_sync > 2 ? O_SYNC : O_DSYNC) : 0));
-
-    if (!f_dryrun) {
-	fsobj_init(&t_obj);
-
-	if (fsobj_open(&t_obj, dstdir, tmpname, (f_exist ? 0 : O_CREAT)|O_WRONLY|(f_sync ? O_DIRECT : 0)|(f_sync > 1 ? (f_sync > 2 ? O_SYNC : O_DSYNC) : 0), 0600) <= 0) {
-	    fprintf(stderr, "%s: Error: %s/%s: create: %s\n",
-		    argv0, fsobj_path(dstdir), tmpname, strerror(errno));
-	    rc = -1;
-	    goto End;
-	}
-    }
-
-    if (src->stat.st_size > 0) {
-	if (f_mmap) {
-	    bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-	    if (bufp == MAP_FAILED) {
-		fprintf(stderr, "%s: Error: %s: mmap(fd=%d, size=%ld): %s\n",
-			argv0, fsobj_path(src),
-			src->fd,
-			src->stat.st_size,
-			strerror(errno));
-		return -1;
-	    }
-
-	    madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-
-	    if (!f_dryrun) {
-		rc = write(t_obj.fd, bufp, src->stat.st_size);
-		if (rc < 0) {
-		    fprintf(stderr, "%s: Error: %s: write: %s\n",
-			    argv0, fsobj_path(&t_obj), strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
-		if (rc != src->stat.st_size) {
-		    fprintf(stderr, "%s: Error: %s/%s: Short write (%ld of %ld bytes)\n",
-			    argv0, fsobj_path(&t_obj), tmpname,
-			    rc, src->stat.st_size);
-		    rc = -1;
-		    goto End;
-		}
-	    }
-	} else {
-	    while ((got = read(src->fd, buf, sizeof(buf))) > 0) {
-		if (!f_dryrun) {
-		    rc = write(t_obj.fd, buf, got);
-		    if (rc < 0) {
-			fprintf(stderr, "%s: Error: %s: write: %s\n",
-				argv0, fsobj_path(&t_obj),
-				strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		    if (rc != got) {
-			fprintf(stderr, "%s: Error: %s: Short write (%ld of %ld bytes)\n",
-				argv0, fsobj_path(&t_obj), rc, got);
-			rc = -1;
-			goto End;
-		    }
-		}
-	    }
-	    if (got < 0) {
-		fprintf(stderr, "%s: Error: %s: read: %s\n",
-			argv0, fsobj_path(src), strerror(errno));
-		rc = -1;
-		goto End;
-	    }
-	}
-    }
-
-    if (!f_dryrun) {
-	if (fsobj_rename(&t_obj, d_name) < 0) {
-	    fprintf(stderr, "%s: Error: %s -> %s: Rename: %s\n",
-		    argv0, fsobj_path(src), d_name, strerror(errno));
-	    rc = -1;
-	    goto End;
-	}
-    }
-
-    fsobj_reset(dst);
-    if (!f_dryrun)
-	*dst = t_obj;
-    else
-	dst->stat.st_size = src->stat.st_size;
-
-    fsobj_reopen(dst, O_PATH);
 
  End:
-    if (rc)
-	(void) unlinkat(t_obj.parent->fd, tmpname, AT_RESOLVE_BENEATH);
 
-    if (bufp) {
-	if (f_mmap)
-	    munmap(bufp, src->stat.st_size);
-	else
-	    free(bufp);
-    }
+    if (bufp)
+        munmap(bufp, src->stat.st_size);
+    if (tfd >= 0)
+        close(tfd);
+    if (tmpname)
+        (void) unlinkat(dst->parent->fd, tmpname, 0);
 
     return rc;
 }
 
 
 
-
 int
-dir_prune(FSOBJ *srcdir,
-	  FSOBJ *dstdir) {
+dir_prune2(FSOBJ *srcdir,
+           FSOBJ *dstdir) {
     int rc = 0, s_type = -1;
     FSOBJ s_obj, d_obj;
 
 
     if (f_debug) {
-	fprintf(stderr, "*** dir_prune(%s%s%s)\n",
+	fprintf(stderr, "*** dir_prune2(%s%s%s)\n",
 		srcdir ? fsobj_path(srcdir) : "-",
 		srcdir ? " <- " : "",
 		dstdir ? fsobj_path(dstdir) : "-");
@@ -346,7 +338,7 @@ dir_prune(FSOBJ *srcdir,
 	    goto Next;
 
 	if (srcdir) {
-	    s_type = fsobj_open(&s_obj, srcdir, d_obj.name, O_PATH);
+	    s_type = fsobj_open(&s_obj, srcdir, d_obj.name, O_PATH, 0);
 
 	    /* Skip if -xx enabled and source object is on a another filesystem */
 	    if (f_noxdev > 1 && srcdir->stat.st_dev != s_obj.stat.st_dev) {
@@ -366,7 +358,7 @@ dir_prune(FSOBJ *srcdir,
 		goto End;
 	    }
 
-	    if (dir_prune(s_type > 0 ? &s_obj : NULL, &d_obj) < 0) {
+	    if (dir_prune2(s_type > 0 ? &s_obj : NULL, &d_obj) < 0) {
 		if (f_ignore)
 		    goto Next;
 		else {
@@ -409,6 +401,305 @@ dir_prune(FSOBJ *srcdir,
     return rc;
 }
 
+
+int
+dir_prune(FSOBJ *dp) {
+    int rc = 0;
+    FSOBJ d_obj;
+
+
+    if (f_debug) {
+	fprintf(stderr, "*** dir_prune(%s)\n",
+		fsobj_path(dp));
+    }
+
+    /* Reopen destination directory for reading */
+    if ((dp->flags & O_PATH) != 0) {
+	if (fsobj_reopen(dp, O_RDONLY|O_DIRECTORY) < 0)
+	    return -1;
+    }
+
+
+    fsobj_init(&d_obj);
+    fsobj_rewind(dp);
+
+    while ((rc = fsobj_readdir(dp, &d_obj)) > 0) {
+	int d_type = fsobj_typeof(&d_obj);
+
+	if (d_type <= 0) {
+	    if (f_ignore)
+		goto Next;
+	    else {
+		rc = -1;
+		goto End;
+	    }
+	}
+
+	/* Skip if noxdev enabled and object is on another filesystem */
+	if (f_noxdev && dp->stat.st_dev != d_obj.stat.st_dev)
+	    goto Next;
+
+	if (f_recurse && S_ISDIR(d_obj.stat.st_mode)) {
+	    /* Recurse down */
+
+	    if (fsobj_equal(&d_obj, &root_srcdir)) {
+		fprintf(stderr, "%s: Error: %s: Infinite recursion\n",
+			argv0, fsobj_path(&d_obj));
+		rc = -1;
+		goto End;
+	    }
+
+	    if (dir_prune(&d_obj) < 0) {
+		if (f_ignore)
+		    goto Next;
+		else {
+		    rc = -1;
+		    goto End;
+		}
+	    }
+	}
+
+        if (!f_dryrun) {
+            if (fsobj_delete(&d_obj) < 0) {
+                fprintf(stderr, "%s: Error: %s: Delete: %s\n",
+                        argv0, fsobj_path(&d_obj), strerror(errno));
+
+                if (f_ignore)
+                    goto Next;
+                else {
+                    rc = -1;
+                    goto End;
+                }
+            }
+            ++n_scanned;
+            ++n_deleted;
+            if (f_verbose)
+                printf("- %s\n", fsobj_path(&d_obj));
+        }
+
+    Next:
+        fsobj_reset(&d_obj);
+    }
+
+ End:
+    fsobj_fini(&d_obj);
+    return rc;
+}
+
+
+int
+owner_clone(FSOBJ *src,
+             FSOBJ *dst) {
+    int rc = 0;
+
+
+    if (f_force || src->stat.st_uid != dst->stat.st_uid) {
+        if (geteuid() != 0) {
+            if (f_warnings)
+                fprintf(stderr, "%s: Warning: %s: Owner Change not Permitted\n",
+                        argv0, fsobj_path(dst));
+        } else {
+            if (!f_dryrun) {
+                if (fchownat(dst->fd, "", src->stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
+                    fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
+                            argv0,
+                            fsobj_path(dst),
+                            src->stat.st_uid,
+                            strerror(errno));
+                    rc = -1;
+                    goto End;
+                }
+            }
+            rc = 1;
+	}
+    }
+
+ End:
+    return rc;
+}
+
+int
+group_clone(FSOBJ *src,
+            FSOBJ *dst) {
+    int rc = 0;
+
+
+    if (f_force || src->stat.st_gid != dst->stat.st_gid) {
+        if (geteuid() != 0 && !in_grouplist(src->stat.st_gid)) {
+            if (f_warnings)
+                fprintf(stderr, "%s: Warning: %s: Group Change not Permitted\n",
+                        argv0, fsobj_path(dst));
+        } else {
+            if (!f_dryrun) {
+                if (fchownat(dst->fd, "", -1, src->stat.st_gid, AT_EMPTY_PATH) < 0) {
+                    fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
+                            argv0,
+                            fsobj_path(dst),
+                            src->stat.st_gid,
+                            strerror(errno));
+                    rc = -1;
+                    goto End;
+                }
+            }
+            rc = 1;
+        }
+    }
+
+ End:
+    return rc;
+}
+
+int
+mode_clone(FSOBJ *src,
+           FSOBJ *dst) {
+    int rc = 0;
+
+
+    if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
+        if (!f_dryrun) {
+            if (fchmodat(dst->parent->fd, dst->name, (src->stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
+                fprintf(stderr, "%s: Error: %s: fchmodat(0%o): %s\n",
+                        argv0,
+                        fsobj_path(dst),
+                        (src->stat.st_mode&ALLPERMS),
+                        strerror(errno));
+                rc = -1;
+                goto End;
+            }
+        }
+        rc = 1;
+    }
+
+ End:
+    return rc;
+}
+
+
+acl_t
+acl_get(FSOBJ *op,
+        acl_type_t t) {
+#if HAVE_ACL_GET_FD_NP
+    if (op->fd >= 0)
+        return acl_get_fd_np(op->fd, t);
+#endif
+#if HAVE_ACL_GET_LINK_NP
+    return acl_get_link_np(fsobj_path(op), t);
+#else
+# if HAVE_ACL_GET_FD
+    if (t == ACL_TYPE_ACCESS)
+        return acl_get_fd(op->fd);
+# endif
+# if HAVE_ACL_GET_FILE
+    return acl_get_file(fsobj_path(op), t);
+# else
+    errno = ENOSYS;
+    return NULL;
+# endif
+#endif
+}
+
+int
+acl_set(FSOBJ *op,
+        acl_t a,
+        acl_type_t t) {
+#if HAVE_ACL_SET_FD_NP
+    if (op->fd >= 0)
+        return acl_set_fd_np(op->fd, a, t);
+#endif
+#if HAVE_ACL_SET_LINK_NP
+    return acl_set_link_np(fsobj_path(op), t, a);
+#else
+# if HAVE_ACL_SET_FD
+    if (t == ACL_TYPE_ACCESS)
+        return acl_set_fd(op->fd, a);
+# endif
+# if HAVE_ACL_SET_FILE
+    return acl_set_file(fsobj_path(op), t, a);
+# else
+    errno = ENOSYS;
+    return NULL;
+# endif
+#endif
+}
+
+int
+acls_clone(FSOBJ *src,
+           FSOBJ *dst) {
+    int rc = 0;
+    acl_t s_acl = NULL, d_acl = NULL;
+    acl_type_t s_t, d_t;
+
+#ifdef ACL_TYPE_NFS4
+    s_acl = acl_get(src->fd, s_t = ACL_TYPE_NFS4);
+    if (!s_acl)
+#endif
+        s_acl = acl_get(src, s_t = ACL_TYPE_ACCESS);
+
+#ifdef ACL_TYPE_NFS4
+    d_acl = acl_get(dst, d_t = ACL_TYPE_NFS4);
+    if (!d_acl)
+#endif
+        d_acl = acl_get(dst, d_t = ACL_TYPE_ACCESS);
+
+    if (!s_acl && !d_acl)
+        return 0;
+
+    if (f_force || (!s_acl && d_acl) || (s_acl && !d_acl) || (s_acl && (rc = acl_diff(s_acl, d_acl)))) {
+        if (!s_acl) {
+            fprintf(stderr, "No source ACL, generating trivial ACL\n");
+
+            /* Generate a trivial ACL from the mode bits */
+            s_acl = acl_init(0);
+            /* XXX: ToDO */
+            abort();
+        }
+
+        if (!f_dryrun) {
+            if (acl_set(dst, s_acl, s_t) < 0) {
+                fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s\n",
+                        argv0, fsobj_path(dst),
+                        dst->fd, strerror(errno));
+                rc = -1;
+                goto End;
+            }
+        }
+        rc = 1;
+    }
+
+    if (d_t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
+        acl_free(s_acl);
+        acl_free(d_acl);
+
+        s_acl = acl_get(src, s_t = ACL_TYPE_DEFAULT);
+        d_acl = acl_get(dst, d_t = ACL_TYPE_DEFAULT);
+
+        if (f_force || (!s_acl && d_acl) || (s_acl && !d_acl) || (s_acl && (rc = acl_diff(s_acl, d_acl)))) {
+            if (!s_acl) {
+                /* Generate a trivial ACL from the mode bits */
+                s_acl = acl_init(0);
+                /* XXX: ToDO */
+                abort();
+            }
+            if (!f_dryrun) {
+                if (acl_set(dst, s_acl, s_t) < 0) {
+                    fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s\n",
+                            argv0, fsobj_path(dst),
+                            dst->fd, strerror(errno));
+                    rc = -1;
+                    goto End;
+                }
+            }
+            rc = 1;
+        }
+    }
+ End:
+    if (s_acl)
+        acl_free(s_acl);
+    if (d_acl)
+        acl_free(d_acl);
+
+    return rc;
+}
 
 /* Clone extended attributes */
 int
@@ -708,22 +999,28 @@ ts_text(struct timespec *ts,
     return buf;
 }
 
-void
-dir_list(FSOBJ *dirp) {
+int
+dir_list(FSOBJ *dirp,
+         int level) {
     FSOBJ obj;
-    int rc, n;
+    int rc, n = 0, ns = 0;
 
-    n = 0;
+    fsobj_reopen(dirp, O_RDONLY|O_DIRECTORY);
+
     fsobj_init(&obj);
-    while ((rc = fsobj_readdir(dirp, &obj)) > 0)
-	fprintf(stderr, "%d. %s\n", ++n, fsobj_path(&obj));
+    while ((rc = fsobj_readdir(dirp, &obj)) > 0) {
+	fprintf(stderr, "%*s%3d. %s [%o]\n", level*2, "", ++n, fsobj_path(&obj), (obj.stat.st_mode&S_IFMT));
+        if (fsobj_typeof(&obj) == S_IFDIR)
+            ns += dir_list(&obj,level+1);
+    }
     fsobj_fini(&obj);
+    return n+ns;
 }
 
 
 int
-copy_times(FSOBJ *src,
-	   FSOBJ *dst) {
+times_clone(FSOBJ *src,
+            FSOBJ *dst) {
     int rc = 0;
 
 #if HAVE_UTIMENSAT
@@ -741,7 +1038,7 @@ copy_times(FSOBJ *src,
 		goto End;
 	    }
 	}
-	rc |= MD_BTIME;
+        rc = 1;
     }
 #endif
     if (f_force || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
@@ -758,9 +1055,10 @@ copy_times(FSOBJ *src,
 		goto End;
 	    }
 	}
-	rc |= MD_MTIME;
+        rc = 1;
     }
 #else
+    abort();
     errno = ENOSYS;
     rc = -1;
 #endif
@@ -770,526 +1068,312 @@ copy_times(FSOBJ *src,
 }
 
 
-int
-dir_clone(FSOBJ *srcdir,
-	  FSOBJ *dstdir) {
-    int rc = 0;
-    acl_t s_acl = NULL, d_acl = NULL;
-    FSOBJ s_obj, d_obj;
+char *
+fsobj_typestr(FSOBJ *op) {
+    if (!op)
+        return "Null";
+    if (op->magic != FSOBJ_MAGIC)
+        return "Invalid";
+    if (op->name == NULL)
+        return "Init";
 
-
-    if (f_debug) {
-	fprintf(stderr, "*** dir_clone: %s -> %s\n",
-		fsobj_path(srcdir),
-		fsobj_path(dstdir));
+    switch (op->stat.st_mode & S_IFMT) {
+    case S_IFDIR:
+        return "Dir";
+    case S_IFREG:
+        return "File";
+    case S_IFLNK:
+        return "Symlink";
+    default:
+        return "?";
     }
-
-    if (!fsobj_isopen(srcdir)) {
-	fprintf(stderr, "%s: Error: %s: Not open & readable\n",
-		argv0, fsobj_path(srcdir));
-	return -1;
-    }
-
-    if (!S_ISDIR(srcdir->stat.st_mode)) {
-	fprintf(stderr, "%s: Error: %s: Not a Directory\n",
-		argv0, fsobj_path(srcdir));
-	return -1;
-    }
-
-    /* Reopen destination directory for reading (if needed) */
-    if (fsobj_isopen(dstdir) && (dstdir->flags & O_PATH) != 0) {
-	if (f_debug)
-	    fprintf(stderr, "%s: Reopening Destination Directory\n",
-		    fsobj_path(dstdir));
-	if (fsobj_reopen(dstdir, O_RDONLY|O_DIRECTORY|O_NOFOLLOW) < 0) {
-	    fprintf(stderr, "%s: Error: %s: Reopen Directory: %s\n",
-		    argv0, fsobj_path(dstdir), strerror(errno));
-	    return -1;
-	}
-    }
-
-    /* Reopen for reading if source object is directory (if needed) */
-    if ((srcdir->flags & O_PATH) != 0) {
-	if (f_debug)
-	    fprintf(stderr, "%s: Reopening Source Directory\n",
-		    fsobj_path(srcdir));
-	if (fsobj_reopen(srcdir, O_RDONLY|O_DIRECTORY|O_NOFOLLOW) < 0) {
-	    fprintf(stderr, "%s: Error: %s: Reopen Directory: %s\n",
-		    argv0, fsobj_path(srcdir), strerror(errno));
-	    return -1;
-	}
-    }
-
-    fsobj_init(&s_obj);
-    fsobj_init(&d_obj);
-
-    if (f_prune) {
-#if 0
-	dir_prune(srcdir, dstdir);
-#else
-	if (f_debug)
-	    fprintf(stderr, "%s: Pruning Destination\n",
-		    fsobj_path(dstdir));
-
-	while ((rc = fsobj_readdir(dstdir, &d_obj)) > 0) {
-	    int s_type = fsobj_open(&s_obj, srcdir, d_obj.name, O_PATH);
-	    if (s_type == 0) {
-		if (!f_dryrun) {
-		    if (fsobj_typeof(&d_obj) == S_IFDIR) {
-			if (dir_prune(NULL, &d_obj) < 0) {
-			    rc = -1;
-			    goto End;
-			}
-		    }
-		    if (fsobj_delete(&d_obj) < 0) {
-			fprintf(stderr, "%s: Error: %s: Delete: %s\n",
-				argv0, fsobj_path(&d_obj), strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		}
-		++n_deleted;
-		if (f_verbose)
-		    printf("- %s\n", fsobj_path(&d_obj));
-	    }
-            fsobj_reset(&s_obj);
-            fsobj_reset(&d_obj);
-	}
-	fsobj_reset(&d_obj);
-    }
-#endif
-
-    fsobj_rewind(dstdir);
-    fsobj_rewind(srcdir);
-
-    if (f_debug)
-	fprintf(stderr, "%s: Scanning Source Directory\n",
-		fsobj_path(srcdir));
-
-    while ((rc = fsobj_readdir(srcdir, &s_obj)) > 0) {
-	unsigned int mdiff = 0;
-	int s_type = -1, d_type = -1;
-
-	s_type = fsobj_typeof(&s_obj);
-	if (s_type <= 0) {
-	    fprintf(stderr, "%s: Error: %s: Unknown object type\n",
-		    argv0, fsobj_path(&s_obj));
-	    rc = -1;
-	    goto End;
-	}
-
-	if (f_debug)
-	    fprintf(stderr, " -- got source object: %s (type %d)\n",
-		    s_obj.name, s_type);
-
-	if (fsobj_isopen(dstdir))
-	    d_type = fsobj_open(&d_obj, dstdir, s_obj.name, O_PATH);
-	else
-	    d_type = 0;
-
-	if (f_debug)
-	    fprintf(stderr, " -- found destination object: %s (type %d(%d), fd %d, errno %d)\n",
-		    d_obj.name, d_type, fsobj_typeof(&d_obj), d_obj.fd, errno);
-
-	if (d_type > 0 && s_type != d_type) {
-	    /* Different type objects, delete target and recreate */
-
-	    if (f_debug)
-		fprintf(stderr, "** %s -> %s: Object types differs (%o vs %o) - removing destination\n",
-			fsobj_path(&s_obj),
-			fsobj_path(&d_obj),
-			s_obj.stat.st_mode&S_IFMT,
-			d_obj.stat.st_mode&S_IFMT);
-
-	    if (!f_metaonly) {
-		if (d_type == S_IFDIR) {
-		    /* If directory, make sure it's empty */
-		    if (dir_prune(NULL, &d_obj) < 0) {
-			rc = -1;
-			goto End;
-		    }
-		}
-
-		if (!f_dryrun) {
-		    /* Remove the destination object */
-		    if (fsobj_delete(&d_obj) < 0) {
-			fprintf(stderr, "%s: Error: %s: Delete: %s\n",
-				argv0, fsobj_path(&d_obj), strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		}
-
-		if (f_verbose)
-		    printf("- %s\n", fsobj_path(&d_obj));
-	    }
-
-	    fsobj_reset(&d_obj);
-	    d_type = 0;
-	}
-
-	if (d_type == 0) {
-	    /* Destination object does not exist */
-	    if (f_exist)
-		goto Next;
-
-	    if (!f_metaonly) {
-		if (!f_dryrun) {
-		    switch (s_type) {
-		    case S_IFDIR:
-			if (f_debug)
-			    fprintf(stderr, "** %s/%s: Destination is new directory\n",
-				    fsobj_path(dstdir),
-				    s_obj.name);
-
-			if (fsobj_open(&d_obj, dstdir, s_obj.name, (f_exist ? 0 : O_CREAT)|O_DIRECTORY,
-				       (s_obj.stat.st_mode&ALLPERMS)) < 0) {
-			    fprintf(stderr, "%s: Error: %s/%s: mkdirat: %s\n",
-				    argv0, fsobj_path(dstdir), s_obj.name, strerror(errno));
-			    rc = -1;
-			    goto End;
-                        }
-			break;
-
-		    case S_IFREG:
-			if (f_debug)
-			    fprintf(stderr, "** %s/%s: Destination is new file\n",
-				    fsobj_path(dstdir),
-				    s_obj.name);
-
-			if (!f_metaonly) {
-			    if (file_copyto(&s_obj, &d_obj, dstdir) < 0) {
-				rc = -1;
-				goto End;
-			    }
-                            d_type = fsobj_typeof(&d_obj);
-			}
-			break;
-
-		    case S_IFLNK:
-			char pbuf[PATH_MAX+1];
-			ssize_t plen;
-
-			if (f_debug)
-			    fprintf(stderr, "** %s/%s: Destination is new symbolic link\n",
-				    fsobj_path(dstdir),
-				    s_obj.name);
-
-			plen = readlinkat(srcdir->fd, s_obj.name, pbuf, PATH_MAX);
-			if (plen < 0) {
-			    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
-				    argv0, fsobj_path(&s_obj), strerror(errno));
-			    rc = -1;
-			    goto End;
-			}
-			pbuf[plen] = '\0';
-
-			if (symlinkat(pbuf, dstdir->fd, s_obj.name) < 0) {
-			    fprintf(stderr, "%s: Error: %s/%s -> %s: Create(symlink): %s\n",
-				    argv0, fsobj_path(dstdir), s_obj.name,
-				    pbuf,
-				    strerror(errno));
-			    rc = -1;
-			    goto End;
-			}
-			if (fsobj_open(&d_obj, dstdir, s_obj.name, O_PATH) < 0) {
-			    fprintf(stderr, "%s: Error: %s/%s: Open(symlink): %s\n",
-				    argv0, fsobj_path(dstdir), s_obj.name,
-				    strerror(errno));
-			    rc = -1;
-			    goto End;
-			}
-			break;
-
-		    default:
-			fprintf(stderr, "%s: Error: %s: Unhandled file type: %o\n",
-				argv0, fsobj_path(&s_obj), s_type);
-			rc = -1;
-			goto End;
-		    }
-		} else {
-		    /* Dry-run, simulate that we created the same object */
-		    d_type = fsobj_fake(&d_obj, dstdir, &s_obj);
-
-		    if (f_debug)
-			fprintf(stderr, "%s <- %s: Faked object: type=%d\n",
-				fsobj_path(&d_obj), fsobj_path(&s_obj), d_type);
-		}
-		mdiff |= MD_NEW;
-	    }
-	} else {
-	    char s_tbuf[256], d_tbuf[256];
-
-	    if (f_debug)
-		fprintf(stderr, "%s / %s: size %ld vs %ld, time %s vs %s\n",
-			fsobj_path(&s_obj),
-			fsobj_path(&d_obj),
-			s_obj.stat.st_size,
-			d_obj.stat.st_size,
-			ts_text(&s_obj.stat.st_mtim, s_tbuf, sizeof(s_tbuf)),
-			ts_text(&d_obj.stat.st_mtim, d_tbuf, sizeof(d_tbuf)));
-
-
-	    switch (s_type) {
-	    case S_IFREG:
-		if (f_force || s_obj.stat.st_size != d_obj.stat.st_size ||
-		    ts_isless(&d_obj.stat.st_mtim, &s_obj.stat.st_mtim)) {
-
-		    if (!f_dryrun && !f_metaonly) {
-			if (file_copyto(&s_obj, &d_obj, NULL) < 0) {
-			    rc = -1;
-			    goto End;
-			}
-		    }
-		    mdiff |= MD_DATA;
-		}
-		break;
-
-	    case S_IFLNK:
-		char s_buf[PATH_MAX+1];
-		char d_buf[PATH_MAX+1];
-		ssize_t s_len, d_len;
-
-		/* XXX: f_metaonly - how to handle symlinks? */
-
-		s_len = readlinkat(s_obj.parent->fd, s_obj.name, s_buf, PATH_MAX);
-		if (s_len < 0) {
-		    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
-			    argv0, fsobj_path(&s_obj), strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
-		s_buf[s_len] = '\0';
-
-		d_len = readlinkat(d_obj.parent->fd, s_obj.name, d_buf, PATH_MAX);
-		if (d_len < 0) {
-		    fprintf(stderr, "%s: Error: %s: readlinkat: %s\n",
-			    argv0, fsobj_path(&d_obj), strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
-		d_buf[d_len] = '\0';
-
-		if (s_len != d_len || strcmp(s_buf, d_buf) != 0) {
-		    if (!f_dryrun) {
-			if (symlinkat(s_buf, d_obj.parent->fd, s_obj.name) < 0) {
-			    fprintf(stderr, "%s: Error: %s -> %s: symlinkat: %s\n",
-				    argv0,
-				    fsobj_path(&d_obj),
-				    fsobj_path(&s_obj),
-				    strerror(errno));
-			    rc = -1;
-			    goto End;
-			}
-		    }
-		    mdiff |= MD_DATA;
-		}
-		break;
-
-	    case S_IFDIR:
-		break;
-
-	    default:
-		fprintf(stderr, "%s: Error: %s/%s: Unhandled file type: %o\n",
-			argv0, fsobj_path(srcdir), s_obj.name, s_type);
-		rc = -1;
-		goto End;
-	    }
-	}
-
-	if (f_owner && (f_force || s_obj.stat.st_uid != d_obj.stat.st_uid)) {
-	    if (geteuid() != 0) {
-		if (f_warnings)
-		    fprintf(stderr, "%s: Warning: %s: Owner Change not Permitted\n",
-			    argv0, fsobj_path(&d_obj));;
-	    } else {
-		if (!f_dryrun) {
-		    if (fchownat(d_obj.fd, "", s_obj.stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
-			fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
-				argv0,
-				fsobj_path(&d_obj),
-				s_obj.stat.st_uid,
-				strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		    }
-		mdiff |= MD_UID;
-	    }
-	}
-
-	if (f_group && (f_force || s_obj.stat.st_gid != d_obj.stat.st_gid)) {
-	    if (geteuid() != 0 && !in_grouplist(s_obj.stat.st_gid)) {
-		if (f_warnings)
-		    fprintf(stderr, "%s: Warning: %s: Group Change not Permitted\n",
-			    argv0, fsobj_path(&d_obj));;
-	    } else {
-		if (!f_dryrun) {
-		    if (fchownat(d_obj.fd, "", -1, s_obj.stat.st_gid, AT_EMPTY_PATH) < 0) {
-			fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
-				argv0,
-				fsobj_path(&d_obj),
-				s_obj.stat.st_gid,
-				strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		}
-		mdiff |= MD_GID;
-	    }
-	}
-
-	if (f_force || (s_obj.stat.st_mode&ALLPERMS) != (d_obj.stat.st_mode&ALLPERMS)) {
-	    if (!f_dryrun) {
-#if __linux__
-                  if (fchmodat(d_obj.parent->fd, d_obj.name, (s_obj.stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
-#else
-                  if (fchmodat(d_obj.fd, "", (s_obj.stat.st_mode&ALLPERMS), AT_EMPTY_PATH) < 0) {
-#endif
-		    fprintf(stderr, "%s: Error: %s: fchmodat(0%o): %s\n",
-			    argv0,
-			    fsobj_path(&d_obj),
-			    (s_obj.stat.st_mode&ALLPERMS),
-			    strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
-	    }
-	    mdiff |= MD_MODE;
-	}
-
-	if (f_xattr) {
-	    int arc = attrs_clone(&s_obj, &d_obj);
-
-	    if (arc < 0) {
-		rc = -1;
-		goto End;
-	    } else if (arc > 0)
-		mdiff |= MD_ATTR;
-	}
-
-	if (f_acl && d_type >= 0) {
-#if HAVE_ACL_GET_FD_NP
-	    acl_type_t s_t, d_t;
-
-	    s_acl = acl_get_fd_np(s_obj.fd, s_t = ACL_TYPE_NFS4);
-	    if (!s_acl)
-		s_acl = acl_get_fd_np(s_obj.fd, s_t = ACL_TYPE_ACCESS);
-
-	    d_acl = acl_get_fd_np(d_obj.fd, d_t = ACL_TYPE_NFS4);
-	    if (!d_acl)
-		d_acl = acl_get_fd_np(d_obj.fd, d_t = ACL_TYPE_ACCESS);
-
-	    if (s_acl && (f_force || !d_acl || (rc = acl_diff(s_acl, d_acl)))) {
-		if (!f_dryrun) {
-		    fsobj_reopen(&d_obj, O_RDONLY|O_NOFOLLOW);
-		    if (acl_set_fd_np(d_obj.fd, s_acl, s_t) < 0) {
-			fprintf(stderr, "%s: Error: %s: acl_set_fd_np(fd=%d): %s\n",
-				argv0, fsobj_path(&d_obj),
-				d_obj.fd, strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-		}
-		mdiff |= MD_ACL;
-	    }
-#endif
-	}
-
-	if (f_times) {
-	    int trc = copy_times(&s_obj, &d_obj);
-	    if (trc > 0)
-		mdiff |= trc;
-	}
-
-	if (f_verbose > 2 || (f_verbose && mdiff)) {
-	    if (mdiff & MD_NEW)
-		putchar('+');
-	    else if (mdiff & (MD_DATA|MD_MTIME|MD_BTIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID))
-		putchar('!');
-	    else
-		putchar(' ');
-	    if (f_verbose > 1)
-		printf(" %s ->", fsobj_path(&s_obj));
-	    printf(" %s", fsobj_path(&d_obj));
-	    if (f_verbose > 1)
-		printf(" [%04x]", mdiff);
-	    putchar('\n');
-	}
-
-	++n_scanned;
-	if (mdiff & MD_NEW)
-	    ++n_added;
-	else if (mdiff)
-	    ++n_updated;
-
-	if (f_recurse && s_type == S_IFDIR) {
-	    if (!f_noxdev || srcdir->stat.st_dev == s_obj.stat.st_dev) {
-		int t_rc;
-
-		if (fsobj_equal(&s_obj, &root_dstdir)) {
-		    if (f_warnings)
-			fprintf(stderr, "%s: Notice: %s: Infinite recursion - skipping\n",
-				argv0, fsobj_path(&s_obj));
-		    goto Next;
-		}
-
-		t_rc = dir_clone(&s_obj, &d_obj);
-		if (t_rc < 0) {
-		    rc = -1;
-		    goto End;
-		}
-		if (f_times)
-		    if (copy_times(&s_obj, &d_obj) < 0) {
-			fprintf(stderr, "%s: Error: %s -> %s: Copying times: %s\n",
-				argv0, fsobj_path(&s_obj), fsobj_path(&d_obj), strerror(errno));
-			exit(1);
-		    }
-	    }
-	    else {
-		if (f_warnings)
-		    fprintf(stderr, "%s: Notice: %s: Skipping recursing down due to noxdev (%ld vs %ld)\n",
-			    argv0, fsobj_path(&s_obj), s_obj.stat.st_dev, srcdir->stat.st_dev);
-		goto Next;
-	    }
-	}
-
-
-    Next:
-	if (s_acl) {
-	    acl_free(s_acl);
-	    s_acl = NULL;
-	}
-
-	if (d_acl) {
-	    acl_free(d_acl);
-	    d_acl = NULL;
-	}
-
-	fsobj_reset(&s_obj);
-	fsobj_reset(&d_obj);
-    }
-
- End:
-    if (s_acl)
-	acl_free(s_acl);
-
-    if (d_acl)
-	acl_free(d_acl);
-
-    fsobj_fini(&s_obj);
-    fsobj_fini(&d_obj);
-
-    return rc;
 }
 
 
 
 
 int
+clone(FSOBJ *src,
+      FSOBJ *dst) {
+    int rc = 0, s_type = -1, d_type = -1;
+    int mdiff = 0;
+
+
+    if (f_debug)
+	fprintf(stderr, "*** clone: %s [%s] -> %s [%s]\n",
+		fsobj_path(src), fsobj_typestr(src),
+		fsobj_path(dst), fsobj_typestr(dst));
+
+    if (fsobj_isopen(src) < 1) {
+        fprintf(stderr, "%s: Error: %s: Source not opened\n",
+                argv0, fsobj_path(src));
+        return -1;
+    }
+
+    s_type = fsobj_typeof(src);
+    d_type = fsobj_typeof(dst);
+
+    ++n_scanned;
+
+    if (d_type > 0 && d_type != s_type) {
+        /* Destination is different type -> delete it */
+
+        if (f_debug)
+            fprintf(stderr, "*** clone: different destination type - deleting\n");
+
+        if (d_type == S_IFDIR)
+            dir_prune(dst);
+
+        if (fsobj_delete(dst) < 0) {
+            fprintf(stderr, "%s: Error: %s: Delete: %s\n",
+                    argv0, fsobj_path(dst), strerror(errno));
+            return -1;
+        }
+
+        mdiff |= MD_DEL;
+        d_type = 0;
+    }
+
+    /* Make sure source is open for reading if file or directory */
+    if ((src->flags & O_PATH) != 0 && (s_type == S_IFDIR || s_type == S_IFREG)) {
+        if (f_debug)
+            fprintf(stderr, "*** clone: Reopening source for reading\n");
+
+        if (fsobj_reopen(src, O_RDONLY) < 0) {
+            fprintf(stderr, "%s: Error: %s: Unable to read\n",
+                    argv0, fsobj_path(src));
+            return -1;
+        }
+    }
+
+    if (dst->fd < 0) {
+        switch (s_type) {
+        case S_IFDIR:
+            if (f_debug)
+                fprintf(stderr, "*** clone: Creating & Opening destination directory for reading\n");
+            if (fsobj_mkdir(dst, src->stat.st_mode) < 0) {
+                fprintf(stderr, "%s: Error: %s: Create(directory): %s\n",
+                        argv0, fsobj_path(dst), strerror(errno));
+                return -1;
+            }
+            break;
+
+        case S_IFREG:
+            if (f_debug)
+                fprintf(stderr, "*** clone: Creating & Opening destination file for reading\n");
+            if (fsobj_open(dst, dst->parent, src->name, O_CREAT|O_WRONLY, src->stat.st_mode) < 0) {
+                fprintf(stderr, "%s: Error: %s/%s: Create(file): %s\n",
+                        argv0, fsobj_path(dst->parent), src->name, strerror(errno));
+                return -1;
+            }
+            break;
+        }
+
+        mdiff |= MD_NEW;
+    } else {
+        switch (s_type) {
+        case S_IFDIR:
+            if (f_debug)
+                fprintf(stderr, "*** clone: Reopening destination directory for reading\n");
+            fsobj_reopen(dst, O_RDONLY);
+            break;
+
+        case S_IFREG:
+            if (f_debug)
+                fprintf(stderr, "*** clone: Reopening destination file for reading\n");
+            fsobj_reopen(dst, O_WRONLY);
+            break;
+        }
+    }
+
+    switch (s_type) {
+    case S_IFDIR:
+        FSOBJ s_obj, d_obj;
+        int s_rc, d_rc;
+
+
+        if (f_debug)
+            fprintf(stderr, "*** clone: Doing subdirectory\n");
+
+        fsobj_init(&s_obj);
+        fsobj_init(&d_obj);
+
+        if (f_prune) {
+            if (f_debug)
+                fprintf(stderr, "*** clone: Pruning destination: %s\n", fsobj_path(dst));
+
+            fsobj_rewind(dst);
+            while ((d_rc = fsobj_readdir(dst, &d_obj)) > 0) {
+                int s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
+
+                if (f_debug)
+                    fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
+                            d_obj.name, s_rc);
+
+                if (s_rc < 0) {
+                    if (fsobj_typeof(&d_obj) == S_IFDIR) {
+                        d_rc = dir_prune(&d_obj);
+                        if (d_rc < 0) {
+                            if (f_debug)
+                                fprintf(stderr, "*** clone: Prune dir_prune(%s) -> %d\n",
+                                        fsobj_path(&d_obj), d_rc);
+                            return -1;
+                        }
+                    }
+
+                    if (fsobj_delete(&d_obj) < 0) {
+                        fprintf(stderr, "%s: Error: %s: Delete: %s\n",
+                                argv0, fsobj_path(dst), strerror(errno));
+                        return -1;
+                    }
+                    ++n_scanned;
+                    ++n_deleted;
+                    if (f_verbose)
+                        printf("- %s\n", fsobj_path(&d_obj));
+                }
+                fsobj_reset(&s_obj);
+                fsobj_reset(&d_obj);
+            }
+            fsobj_reset(&s_obj);
+            fsobj_reset(&d_obj);
+        }
+
+        fsobj_rewind(src);
+        while ((s_rc = fsobj_readdir(src, &s_obj)) > 0) {
+            int d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
+
+            if (f_debug)
+                fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
+
+            if (d_rc < 0) {
+                if (f_debug)
+                    fprintf(stderr, "*** clone: fsobj_open(%s/%s): rc=%d [DST]\n",
+                            fsobj_path(dst), s_obj.name, d_rc);
+                rc = -1;
+                break;
+            }
+
+            s_rc = clone(&s_obj, &d_obj);
+            if (s_rc < 0) {
+                if (f_debug)
+                    fprintf(stderr, "*** clone: clone(%s, %s) -> %d\n",
+                            fsobj_path(&s_obj), fsobj_path(&d_obj), s_rc);
+                rc = -1;
+                break;
+            }
+
+            fsobj_reset(&s_obj);
+            fsobj_reset(&d_obj);
+        }
+
+        fsobj_fini(&s_obj);
+        fsobj_fini(&d_obj);
+        if (rc < 0)
+            return rc;
+        break;
+
+    case S_IFREG:
+        if (f_debug)
+            fprintf(stderr, "*** clone: Doing file\n");
+        if (f_force || src->stat.st_size != dst->stat.st_size || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
+            if (!f_dryrun) {
+                rc = file_clone(src, dst);
+                if (rc < 0)
+                    return -1;
+            }
+            mdiff |= MD_DATA;
+        }
+        break;
+
+    case S_IFLNK:
+        if (f_debug)
+            fprintf(stderr, "*** clone: Doing symlink\n");
+        rc = symlink_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_DATA;
+    }
+
+    if (f_owners) {
+        rc = owner_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_UID;
+    }
+
+    if (f_groups) {
+        rc = group_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_GID;
+    }
+
+    rc = mode_clone(src, dst);
+    if (rc < 0)
+        return -1;
+    if (rc > 0)
+        mdiff |= MD_MODE;
+
+    if (f_acls) {
+        rc = acls_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_ACL;
+    }
+
+    if (f_xattrs) {
+        rc = attrs_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_ATTR;
+    }
+
+    if (f_times) {
+        rc = times_clone(src, dst);
+        if (rc < 0)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_TIME;
+    }
+
+    if (f_verbose > 2 || (f_verbose && mdiff)) {
+        if (mdiff & MD_NEW) {
+            if (mdiff & MD_DEL) {
+                putchar('*');
+            ++n_updated;
+            } else {
+                putchar('+');
+                ++n_added;
+            }
+        } else if (mdiff & MD_DEL) {
+            putchar('-');
+        } else if (mdiff & (MD_DATA|MD_TIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID)) {
+            putchar('!');
+            ++n_updated;
+        } else
+            putchar(' ');
+        if (f_verbose > 1)
+            printf(" %s ->", fsobj_path(src));
+        printf(" %s", fsobj_path(dst));
+        if (f_verbose > 1)
+            printf(" [%04x]", mdiff);
+        putchar('\n');
+    }
+
+    return rc;
+}
+
+
+
+int
 main(int argc,
      char *argv[]) {
-    int i, j, k, rc;
+    int i, j, k, rc = 0;
     time_t t0, t1;
     double dt;
     char *tu = "s";
@@ -1357,32 +1441,20 @@ main(int argc,
 	}
     }
 
-    if (f_all) {
-	f_group   += f_all;
-	f_owner   += f_all;
-	f_recurse += f_all;
-	f_times   += f_all;
-	f_acl     += f_all;
-	f_xattr   += f_all;
-    }
-
     if (f_verbose)
 	printf("[%s - Copyright (c) Peter Eriksson <pen@lysator.liu.se>]\n",
 	       PACKAGE_STRING);
 
-    if (i >= argc) {
-	fprintf(stderr, "%s: Error: Missing required <src> <dst> arguments\n",
-		argv[0]);
-	exit(1);
+    if (f_all) {
+	f_owners  += f_all;
+	f_groups  += f_all;
+	f_recurse += f_all;
+	f_times   += f_all;
+	f_acls    += f_all;
+	f_xattrs  += f_all;
     }
 
-    if (i+1 >= argc) {
-	fprintf(stderr, "%s: Error: Missing required <dst> argument\n",
-		argv[0]);
-	exit(1);
-    }
-
-    if (f_group && geteuid() != 0) {
+    if (f_groups && geteuid() != 0) {
 	my_groups = getgroups(0, NULL);
 
 	my_groupv = calloc(my_groups, sizeof(gid_t));
@@ -1396,30 +1468,56 @@ main(int argc,
     fsobj_init(&root_srcdir);
     fsobj_init(&root_dstdir);
 
+    if (i >= argc) {
+	fprintf(stderr, "%s: Error: Missing required <source> arguments\n",
+		argv[0]);
+        rc = 1;
+        goto Fail;
+    }
+
+    if (fsobj_open(&root_srcdir, NULL, argv[i], O_RDONLY|O_DIRECTORY, 0) <= 0) {
+	fprintf(stderr, "%s: Error: %s: Open(source): %s\n",
+		argv[0], argv[i], strerror(errno));
+        rc = 1;
+        goto Fail;
+    }
+
+    if (++i >= argc) {
+        if (f_debug) {
+            int n;
+
+            puts("Source:");
+            n = dir_list(&root_srcdir, 1);
+            printf("%d total objects\n", n);
+
+            fsobj_fini(&root_srcdir);
+            fsobj_fini(&root_dstdir);
+            exit(0);
+        }
+
+	fprintf(stderr, "%s: Error: Missing required <destination> argument\n",
+		argv[0]);
+        rc = 1;
+        goto Fail;
+    }
+
+
+    if (fsobj_open(&root_dstdir, NULL, argv[i], (f_exist ? 0 : O_CREAT)|O_RDONLY,
+		   (root_srcdir.stat.st_mode&ALLPERMS)|(root_srcdir.stat.st_mode&S_IFMT)) <= 0) {
+	fprintf(stderr, "%s: Error: %s: Open(destination): %s\n",
+		argv[0], argv[i], strerror(errno));
+        rc = 1;
+        goto Fail;
+    }
+
+
     time(&t0);
 
-    if (fsobj_open(&root_srcdir, NULL, argv[i], O_RDONLY|O_DIRECTORY) <= 0) {
-	fprintf(stderr, "%s: Error: %s: open: %s\n",
-		argv[0], argv[i], strerror(errno));
-	exit(1);
-    }
-
-    if (fsobj_open(&root_dstdir, NULL, argv[i+1], (f_exist ? 0 : O_CREAT)|O_RDONLY|O_DIRECTORY,
-		   root_srcdir.stat.st_mode&ALLPERMS) <= 0) {
-	fprintf(stderr, "%s: Error: %s: open: %s\n",
-		argv[0], argv[i+1], strerror(errno));
-	exit(1);
-    }
-    /* XXX: Clone times/acl/extattrs for top-level */
-
-    rc = dir_clone(&root_srcdir, &root_dstdir);
+    rc = clone(&root_srcdir, &root_dstdir);
     if (rc)
 	goto End;
 
  End:
-    fsobj_fini(&root_srcdir);
-    fsobj_fini(&root_dstdir);
-
     time(&t1);
     dt = difftime(t1,t0);
     if (dt > 90.0) {
@@ -1433,5 +1531,10 @@ main(int argc,
     if (f_verbose)
 	printf("[%lu scanned in %.1f %s; %lu added, %lu updated, %lu deleted]\n",
 	       n_scanned, dt, tu, n_added, n_updated, n_deleted);
-    exit(rc ? 1 : 0);
+
+ Fail:
+    fsobj_fini(&root_srcdir);
+    fsobj_fini(&root_dstdir);
+
+    exit(rc);
 }
