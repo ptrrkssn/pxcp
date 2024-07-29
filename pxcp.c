@@ -608,7 +608,7 @@ acl_set(FSOBJ *op,
         return acl_set_fd_np(op->fd, a, t);
 #endif
 #if HAVE_ACL_SET_LINK_NP
-    return acl_set_link_np(fsobj_path(op), a, t);
+    return acl_set_link_np(fsobj_path(op), t, a);
 #else
 # if HAVE_ACL_SET_FD
     if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS)
