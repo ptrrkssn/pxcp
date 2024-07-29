@@ -63,6 +63,10 @@
 #define AT_RESOLVE_BENEATH 0
 #endif
 
+#ifdef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC
+#define st_mtim st_mtimespec
+#endif
+
 #ifndef MAP_NOCORE
 #define MAP_NOCORE 0
 #endif
@@ -244,7 +248,7 @@ file_clone(FSOBJ *src,
         if (src->stat.st_size > 0) {
             bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
             if (bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap(fd=%d, size=%ld): %s\n",
+                fprintf(stderr, "%s: Error: %s: mmap(fd=%d, size=%lld): %s\n",
                         argv0, fsobj_path(src),
                         src->fd,
                         src->stat.st_size,
@@ -269,7 +273,7 @@ file_clone(FSOBJ *src,
                     goto End;
                 }
                 if (wr != src->stat.st_size) {
-                    fprintf(stderr, "%s: Error: %s/%s: Short write (%ld of %ld bytes)\n",
+                    fprintf(stderr, "%s: Error: %s/%s: Short write (%ld of %lld bytes)\n",
                             argv0, fsobj_path(dst->parent), tmpname,
                             wr, src->stat.st_size);
                     errno = EPIPE;
@@ -660,15 +664,20 @@ acls_clone(FSOBJ *src,
 
 #ifdef ACL_TYPE_NFS4
     s_acl = acl_get(src, s_t = ACL_TYPE_NFS4);
-    if (!s_acl)
 #endif
+#ifdef ACL_TYPE_ACCESS
+    if (!s_acl)
         s_acl = acl_get(src, s_t = ACL_TYPE_ACCESS);
+#endif
 
 #ifdef ACL_TYPE_NFS4
     d_acl = acl_get(dst, d_t = ACL_TYPE_NFS4);
     if (!d_acl)
 #endif
-        d_acl = acl_get(dst, d_t = ACL_TYPE_ACCESS);
+#ifdef ACL_TYPE_ACCESS
+    if (!d_acl)
+      d_acl = acl_get(dst, d_t = ACL_TYPE_ACCESS);
+#endif
 
     if (!s_acl && !d_acl)
         return 0;
@@ -695,6 +704,7 @@ acls_clone(FSOBJ *src,
         rc = 1;
     }
 
+#if defined(ACL_TYPE_ACCESS) && defined(ACL_TYPE_DEFAULT)
     if (d_t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
         acl_free(s_acl);
         acl_free(d_acl);
@@ -721,6 +731,8 @@ acls_clone(FSOBJ *src,
             rc = 1;
         }
     }
+#endif
+    
  End:
     if (s_acl)
         acl_free(s_acl);

@@ -36,6 +36,8 @@
 
 #include "config.h"
 
+#include <sys/types.h>
+
 #if HAVE_SYS_ACL_H
 #include <sys/acl.h>
 #endif
@@ -48,6 +50,12 @@
 #if !HAVE_ACL_GET_PERM_NP && HAVE_ACL_GET_PERM
 #define acl_get_perm_np(ps,p) acl_get_perm(ps,p)
 #endif
+
+
+#ifdef __DARWIN_ACL_EXTENDED_ALLOW
+#define ACL_TYPE_NFS4 ACL_TYPE_EXTENDED
+#endif
+
 
 
 extern int

@@ -25,10 +25,16 @@ AC_FUNC_ERROR_AT_LINE
 AC_FUNC_MALLOC
 
 AC_CHECK_MEMBERS([struct stat.st_birthtim.tv_sec])
+AC_CHECK_MEMBERS([struct stat.st_mtimespec.tv_sec])
+AC_CHECK_MEMBERS([struct stat.st_mtim.tv_sec])
 
 AC_SEARCH_LIBS([acl_get_perm], [acl])
 
-AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np extattr_get_fd utimensat getdirentries funlinkat])
+AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np])
+AC_CHECK_FUNCS([extattr_get_fd])
+AC_CHECK_FUNCS([utimensat utimens])
+AC_CHECK_FUNCS([funlinkat fchownat readlinkat unlinkat symlinkat openat renameat fchmodat])
+AC_CHECK_FUNCS([getdirentries])
 
 
 AC_CONFIG_FILES([Makefile])
