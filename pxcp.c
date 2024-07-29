@@ -76,6 +76,7 @@ int f_verbose = 0;
 int f_noxdev = 0;
 int f_dryrun = 0;
 int f_sync = 0;
+int f_stats = 0;
 int f_recurse = 0;
 int f_exist = 0;
 int f_metaonly = 0;
@@ -95,6 +96,8 @@ int f_all = 0;
 int my_groups = 0;
 gid_t *my_groupv = NULL;
 
+struct timespec t0, t1;
+
 struct options {
     char c;
     int *vp;
@@ -106,6 +109,7 @@ struct options {
     { 'f', &f_force,     "Force updates" },
     { 'g', &f_groups,    "Copy object group" },
     { 'h', NULL,         "Display usage information" },
+    { 'i', &f_ignore,    "Ignore non-fatal errors and continue" },
     { 'm', &f_metaonly,  "Only copy metadata" },
     { 'n', &f_dryrun,    "Enable dry-run mode" },
     { 'o', &f_owners,    "Copy object owner" },
@@ -118,6 +122,7 @@ struct options {
     { 'x', &f_noxdev,    "Do not cross filesystems" },
     { 'A', &f_acls,      "Copy ACLs" },
     { 'M', &f_mmap,      "Use mmap(2)" },
+    { 'S', &f_stats,     "Print stats summary" },
     { 'X', &f_xattrs,    "Copy Extended Attributes" },
     { -1,  NULL,         NULL }
 };
@@ -130,6 +135,9 @@ unsigned long n_scanned = 0;
 unsigned long n_added = 0;
 unsigned long n_updated = 0;
 unsigned long n_deleted = 0;
+
+unsigned long long b_written = 0;
+
 
 #define MD_NEW    0x0001
 #define MD_DEL    0x0002
@@ -226,77 +234,152 @@ symlink_clone(FSOBJ *src,
 ssize_t
 file_clone(FSOBJ *src,
            FSOBJ *dst) {
-    ssize_t wr, rc = 0;
+    ssize_t wr, rr, rc = 0;
     char *bufp = MAP_FAILED;
-    char *tmpname = ".pxcp_tmpfile"; /* XXX: Make dynamic */
     int tfd = -1;
+    char tmppath[PATH_MAX], *tmpname = NULL;
 
 
-    if (f_force || src->stat.st_size != dst->stat.st_size || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
-        if (src->flags & O_PATH)
-            fsobj_reopen(src, O_RDONLY);
+    if (!f_force && src->stat.st_size == dst->stat.st_size && ts_isless(&src->stat.st_mtim, &dst->stat.st_mtim))
+	return 0;
+    
+    if (src->flags & O_PATH)
+	fsobj_reopen(src, O_RDONLY|O_DIRECT);
 
-        if (!f_dryrun) {
-            tfd = openat(dst->parent->fd, tmpname, O_CREAT|O_EXCL|O_WRONLY, 0400);
-            if (tfd < 0) {
-                fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
-                        argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-                return -1;
-            }
-        }
+    if (!f_dryrun) {
+#if defined(HAVE_MKOSTEMPSAT)
+	strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
+	tmpname = tmppath;
+	tfd = mkostempsat(dst->parent->fd, tmpname, 0, O_DIRECT);
+#elif defined(HAVE_MKOSTEMP)
+	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXX", fsobj_path(dst->parent));
+	tmpname = strrchr(tmppath, '/');
+	if (tmpname)
+	    ++tmpname;
+	tfd = mkostemp(tmppath, O_DIRECT);
+#elif defined(HAVE_MKSTEMP)
+	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXX", fsobj_path(dst->parent));
+	tmpname = strrchr(tmppath, '/');
+	if (tmpname)
+	    ++tmpname;
+	tfd = mkstemp(tmppath);
+#else
+	int n = 0;
+	do {
+	    sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
+	    tfd = openat(dst->parent->fd, tmpname, O_CREAT|O_EXCL|O_WRONLY, 0400);
+	} while (tfd < 0 && errno == EEXIST && n < 5);
+	tmpname = tmppath;
+#endif
+	if (tfd < 0) {
+	    fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
+		    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+	    return -1;
+	}
+	
+	if (f_mmap) {
+	    if (src->stat.st_size > 0) {
+		bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
+		if (bufp == MAP_FAILED) {
+		    fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+			    argv0, fsobj_path(src), strerror(errno));
+		    rc = -1;
+		    goto End;
+		}
+		
+		/* Ignore errors */
+		(void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+		
+		if (tfd >= 0) {
+		    wr = write(tfd, bufp, src->stat.st_size);
+		    if (wr < 0) {
+			int t_errno = errno;
+			
+			fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
+				argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+			errno = t_errno;
+			rc = -1;
+			goto End;
+		    }
 
-        if (src->stat.st_size > 0) {
-            bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-            if (bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
-                        argv0, fsobj_path(src), strerror(errno));
-                rc = -1;
-                goto End;
-            }
+		    b_written += wr;
+		    
+		    if (wr != src->stat.st_size) {
+			fprintf(stderr, "%s: Error: %s/%s: Short write\n",
+				argv0, fsobj_path(dst->parent), tmpname);
+			errno = EPIPE;
+			rc = -1;
+			goto End;
+		    }
 
-            /* Ignore errors */
-            (void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+		}
+	    }
+	} else {
+	    char buf[256*1024];
 
-            if (!f_dryrun) {
-                wr = write(tfd, bufp, src->stat.st_size);
-                if (wr < 0) {
-                    int t_errno = errno;
+	    if (ftruncate(tfd, src->stat.st_size) < 0) {
+		int t_errno = errno;
+		
+		fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
+			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+		errno = t_errno;
+		rc = -1;
+		goto End;
+	    }
+	    
+	    while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
+		wr = write(tfd, buf, rr);
+		if (wr < 0) {
+		    int t_errno = errno;
+		    
+		    fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
+			    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+		    errno = t_errno;
+		    rc = -1;
+		    goto End;
+		}
+		
+		b_written += wr;
+		
+		if (wr != rr) {
+		    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
+			    argv0, fsobj_path(dst->parent), tmpname);
+		    errno = EPIPE;
+		    rc = -1;
+		    goto End;
+		}
 
-                    fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
-                            argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-                    munmap(bufp, src->stat.st_size);
-                    errno = t_errno;
-                    rc = -1;
-                    goto End;
-                }
-                if (wr != src->stat.st_size) {
-                    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
-                            argv0, fsobj_path(dst->parent), tmpname);
-                    errno = EPIPE;
-                    rc = -1;
-                    goto End;
-                }
-                close(tfd);
-
-                if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
-                    int t_errno = errno;
-
-                    fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
-                            argv0,
-                            fsobj_path(dst->parent), tmpname,
-                            fsobj_path(dst->parent), dst->name,
-                            strerror(errno));
-                    errno = t_errno;
-                    rc = -1;
-                    goto End;
-                }
-                tmpname = NULL;
-
-                fsobj_reopen(dst, O_PATH);
-            }
-            rc = 1;
-        }
+	    }
+	    if (rr < 0) {
+		int t_errno = errno;
+		
+		fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
+			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+		errno = t_errno;
+		rc = -1;
+		goto End;
+	    }
+	}
+	
+	close(tfd);
+	
+	if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
+	    int t_errno = errno;
+	    
+	    fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
+		    argv0,
+		    fsobj_path(dst->parent), tmpname,
+		    fsobj_path(dst->parent), dst->name,
+		    strerror(errno));
+	    errno = t_errno;
+	    rc = -1;
+	    goto End;
+	}
+	tmpname = NULL;
+	
+	fsobj_reopen(dst, O_PATH);
     }
+    rc = 1;
 
  End:
 
@@ -466,7 +549,9 @@ mode_clone(FSOBJ *src,
 
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
         if (!f_dryrun) {
-            if (fchmodat(dst->parent->fd, dst->name, (src->stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
+            if (fchmodat(dst->parent ? dst->parent->fd : AT_FDCWD,
+			 dst->name,
+			 (src->stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
                 if (errno == ENOTSUP && S_ISLNK(dst->stat.st_mode)) {
                     /* Linux doesn't support changing permissions on symbolic links */
                     rc = 0;
@@ -955,7 +1040,11 @@ times_clone(FSOBJ *src,
 
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_birthtim;
-	    if (utimensat(dst->fd, "", times, AT_EMPTY_PATH) < 0) {
+	    
+	    if (utimensat(dst->fd >= 0 ? dst->fd : dst->parent->fd,
+			  dst->fd >= 0 ? "" : dst->name,
+			  times,
+			  dst->fd >= 0 ? AT_EMPTY_PATH : AT_SYMLINK_NOFOLLOW) < 0) {
 		fprintf(stderr, "%s: Error: %s: utimes(btime): %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
@@ -972,7 +1061,10 @@ times_clone(FSOBJ *src,
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_mtim;
 
-	    if (utimensat(dst->fd, "", times, AT_EMPTY_PATH) < 0) {
+	    if (utimensat(dst->fd >= 0 ? dst->fd : dst->parent->fd,
+			  dst->fd >= 0 ? "" : dst->name,
+			  times,
+			  dst->fd >= 0 ? AT_EMPTY_PATH : AT_SYMLINK_NOFOLLOW) < 0) {
 		fprintf(stderr, "%s: Error: %s: utimes(mtime): %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
@@ -1068,8 +1160,8 @@ clone(FSOBJ *src,
             fprintf(stderr, "*** clone: Reopening source for reading\n");
 
         if (fsobj_reopen(src, O_RDONLY) < 0) {
-            fprintf(stderr, "%s: Error: %s: Unable to read\n",
-                    argv0, fsobj_path(src));
+            fprintf(stderr, "%s: Error: %s: Open: %s\n",
+                    argv0, fsobj_path(src), strerror(errno));
             return -1;
         }
     }
@@ -1299,10 +1391,8 @@ int
 main(int argc,
      char *argv[]) {
     int i, j, k, rc = 0;
-    time_t t0, t1;
-    double dt;
     char *tu = "s";
-
+    char *wu = "B";
 
     argv0 = argv[0];
 
@@ -1436,26 +1526,73 @@ main(int argc,
     }
 
 
-    time(&t0);
+    clock_gettime(CLOCK_REALTIME, &t0);
 
     rc = clone(&root_srcdir, &root_dstdir);
     if (rc)
 	goto End;
 
  End:
-    time(&t1);
-    dt = difftime(t1,t0);
-    if (dt > 90.0) {
-	dt /= 60;
-	tu = "m";
+    if (f_verbose || f_stats) {
+	double wb, wps, dt0, dt1, dt, dts;
+	char *wbu;
+	
+	clock_gettime(CLOCK_REALTIME, &t1);
+	
+	dt0 = t0.tv_sec+t0.tv_nsec/1000000000.0;
+	dt1 = t1.tv_sec+t1.tv_nsec/1000000000.0;
+	dt = dts = dt1-dt0;
+
+	if (dt < 1.0) {
+	    dt *= 1000.0;
+	    tu = "ms";
+	    if (dt < 1.0) {
+		dt *= 1000.0;
+		tu = "μs";
+	    }
+	} else {
+	    if (dt > 90.0) {
+		dt /= 60;
+		tu = "m";
+	    }
+	    if (dt > 90.0) {
+		dt /= 60;
+		tu = "h";
+	    }
+	}
+
+	wb = b_written;
+	wbu = "B";
+	if (wb  > 1000) {
+	    wb /= 1000;
+	    wbu = "kB";
+	}
+	if (wb  > 1000) {
+	    wb /= 1000;
+	    wbu = "MB";
+	}
+	if (wb  > 1000) {
+	    wb /= 1000;
+	    wbu = "GB";
+	}
+	wps = b_written / dts;
+	if (wps > 1000) {
+	    wps /= 1000;
+	    wu = "kB/s";
+	}
+	if (wps > 1000) {
+	    wps /= 1000;
+	    wu = "MB/s";
+	}
+	if (wps > 1000) {
+	    wps /= 1000;
+	    wu = "GB/s";
+	}
+	
+	printf("[%lu scanned in %.1f %s (%.0f/%s); %lu added (%.0f/s), %lu updated, %lu deleted; %.1f %s written (%.0f %s)]\n",
+	       n_scanned, dt, tu, n_scanned/dt, tu, n_added, n_added/dt, n_updated, n_deleted,
+	       wb, wbu, wps, wu);
     }
-    if (dt > 90.0) {
-	dt /= 60;
-	tu = "h";
-    }
-    if (f_verbose)
-	printf("[%lu scanned in %.1f %s; %lu added, %lu updated, %lu deleted]\n",
-	       n_scanned, dt, tu, n_added, n_updated, n_deleted);
 
  Fail:
     fsobj_fini(&root_srcdir);

@@ -72,8 +72,8 @@ check-1: setup-check
 	@./pxcp -vrA  t/s t/d && echo "--> OK"
 
 check-2: check-1
-	@echo ""; echo "--- Check 2: Cloning t/s -> t/d (again)"
-	@./pxcp -vrA  t/s t/d && echo "--> OK"
+	@echo ""; echo "--- Check 2: Cloning t/s -> t/d (again, with force)"
+	@./pxcp -vfrA  t/s t/d && echo "--> OK"
 
 check-3: check-1
 	@echo ""; echo "--- Check 3: Cloning t/s -> t/d (again, with prune)"
