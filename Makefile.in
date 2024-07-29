@@ -60,17 +60,21 @@ distclean: clean
 
 # Check targets
 setup-check:
-	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && touch t/d/d && setfacl -m root:r t/s/f.txt && echo "Hello" >t/s/d/f2.txt
+	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && touch t/d/d && setfacl -m root:r t/s/f.txt && echo "Hello" >t/s/d/f2.txt
 
 check:	pxcp setup-check
 	@echo ""; echo "--- Check 1: Cloning t/s -> t/d"
-	./pxcp -vrA  t/s t/d
-	@echo ""; echo "--- Check 1A: ACL ACE entry copied"
-	getfacl t/s/f.txt | fgrep 'user:root:r--'
-	@echo ""; echo "--- Check 2: Cloning t/e -> t/d"
-	./pxcp -vrAp t/e t/d
-	@echo ""; echo "--- Check 3: t/d should be empty"
-	rmdir t/d
+	@./pxcp -vrA  t/s t/d
+	@echo ""; echo "--- Check 2: ls -lR"
+	@(cd t/s ; ls -lR .) >/tmp/pxcp-s.out ; (cd t/d ; ls -lR .) >/tmp/pxcp-d.out ; cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "OK"
+	@echo ""; echo "--- Check 3: File Content"
+	@cmp t/s/d/f2.txt t/d/d/f2.txt && echo "OK"
+	@echo ""; echo "--- Check 3: ACL ACE entry copied"
+	@getfacl t/s/f.txt | fgrep 'user:root:r--' >/dev/null && echo "OK"
+	@echo ""; echo "--- Check 4: Cloning t/e -> t/d"
+	@./pxcp -vrAp t/e t/d
+	@echo ""; echo "--- Check 5: t/d should be empty"
+	@rmdir t/d && echo "OK"
 	@echo ""; echo "All tests passed."
 
 

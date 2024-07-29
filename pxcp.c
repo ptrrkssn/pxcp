@@ -558,6 +558,12 @@ mode_clone(FSOBJ *src,
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
         if (!f_dryrun) {
             if (fchmodat(dst->parent->fd, dst->name, (src->stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
+                if (errno == ENOTSUP && S_ISLNK(dst->stat.st_mode)) {
+                    /* Linux doesn't support changing permissions on symbolic links */
+                    rc = 0;
+                    goto End;
+                }
+
                 fprintf(stderr, "%s: Error: %s: fchmodat(0%o): %s\n",
                         argv0,
                         fsobj_path(dst),
