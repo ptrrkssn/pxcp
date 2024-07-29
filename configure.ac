@@ -32,8 +32,8 @@ AC_SEARCH_LIBS([acl_get_perm], [acl])
 
 AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np])
 AC_CHECK_FUNCS([extattr_get_fd])
-AC_CHECK_FUNCS([utimensat utimens])
-AC_CHECK_FUNCS([funlinkat fchownat readlinkat unlinkat symlinkat openat renameat fchmodat])
+AC_CHECK_FUNCS([utimensat futimens])
+AC_CHECK_FUNCS([funlinkat unlinkat fchownat readlinkat symlinkat openat renameat fchmodat])
 AC_CHECK_FUNCS([getdirentries])
 
 
