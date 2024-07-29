@@ -248,11 +248,8 @@ file_clone(FSOBJ *src,
         if (src->stat.st_size > 0) {
             bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
             if (bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap(fd=%d, size=%lld): %s\n",
-                        argv0, fsobj_path(src),
-                        src->fd,
-                        src->stat.st_size,
-                        strerror(errno));
+                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+                        argv0, fsobj_path(src), strerror(errno));
                 rc = -1;
                 goto End;
             }
@@ -273,9 +270,8 @@ file_clone(FSOBJ *src,
                     goto End;
                 }
                 if (wr != src->stat.st_size) {
-                    fprintf(stderr, "%s: Error: %s/%s: Short write (%ld of %lld bytes)\n",
-                            argv0, fsobj_path(dst->parent), tmpname,
-                            wr, src->stat.st_size);
+                    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
+                            argv0, fsobj_path(dst->parent), tmpname);
                     errno = EPIPE;
                     rc = -1;
                     goto End;
