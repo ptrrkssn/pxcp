@@ -586,7 +586,7 @@ acl_get(FSOBJ *op,
     return acl_get_link_np(fsobj_path(op), t);
 #else
 # if HAVE_ACL_GET_FD
-    if (t == ACL_TYPE_ACCESS)
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS)
         return acl_get_fd(op->fd);
 # endif
 # if HAVE_ACL_GET_FILE
@@ -598,6 +598,7 @@ acl_get(FSOBJ *op,
 #endif
 }
 
+
 int
 acl_set(FSOBJ *op,
         acl_t a,
@@ -607,10 +608,10 @@ acl_set(FSOBJ *op,
         return acl_set_fd_np(op->fd, a, t);
 #endif
 #if HAVE_ACL_SET_LINK_NP
-    return acl_set_link_np(fsobj_path(op), t, a);
+    return acl_set_link_np(fsobj_path(op), a, t);
 #else
 # if HAVE_ACL_SET_FD
-    if (t == ACL_TYPE_ACCESS)
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS)
         return acl_set_fd(op->fd, a);
 # endif
 # if HAVE_ACL_SET_FILE
@@ -630,7 +631,7 @@ acls_clone(FSOBJ *src,
     acl_type_t s_t, d_t;
 
 #ifdef ACL_TYPE_NFS4
-    s_acl = acl_get(src->fd, s_t = ACL_TYPE_NFS4);
+    s_acl = acl_get(src, s_t = ACL_TYPE_NFS4);
     if (!s_acl)
 #endif
         s_acl = acl_get(src, s_t = ACL_TYPE_ACCESS);
@@ -1130,6 +1131,10 @@ clone(FSOBJ *src,
             return -1;
         }
 
+        if (f_verbose)
+            printf("- %s\n", fsobj_path(dst));
+        ++n_deleted;
+
         mdiff |= MD_DEL;
         d_type = 0;
     }
@@ -1168,6 +1173,10 @@ clone(FSOBJ *src,
             }
             break;
         }
+
+        ++n_added;
+        if (f_verbose)
+            printf("+ %s\n", fsobj_path(dst));
 
         mdiff |= MD_NEW;
     } else {
@@ -1343,26 +1352,19 @@ clone(FSOBJ *src,
 
     if (f_verbose > 2 || (f_verbose && mdiff)) {
         if (mdiff & MD_NEW) {
-            if (mdiff & MD_DEL) {
-                putchar('*');
-            ++n_updated;
-            } else {
-                putchar('+');
-                ++n_added;
-            }
-        } else if (mdiff & MD_DEL) {
-            putchar('-');
-        } else if (mdiff & (MD_DATA|MD_TIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID)) {
-            putchar('!');
-            ++n_updated;
-        } else
-            putchar(' ');
-        if (f_verbose > 1)
-            printf(" %s ->", fsobj_path(src));
-        printf(" %s", fsobj_path(dst));
-        if (f_verbose > 1)
-            printf(" [%04x]", mdiff);
-        putchar('\n');
+        } else {
+            if (mdiff & (MD_DATA|MD_TIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID)) {
+                putchar('!');
+                ++n_updated;
+            } else
+                putchar(' ');
+            if (f_verbose > 1)
+                printf(" %s ->", fsobj_path(src));
+            printf(" %s", fsobj_path(dst));
+            if (f_verbose > 1)
+                printf(" [%04x]", mdiff);
+            putchar('\n');
+        }
     }
 
     return rc;

@@ -60,12 +60,18 @@ distclean: clean
 
 # Check targets
 setup-check:
-	rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && setfacl -m root:r t/s/f.txt && echo "Hello" >t/s/d/f2.txt
+	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && touch t/d/d && setfacl -m root:r t/s/f.txt && echo "Hello" >t/s/d/f2.txt
 
 check:	pxcp setup-check
-	./pxcp -vaA t/s t/d && ./pxcp -vaAp t/e t/d
+	@echo ""; echo "--- Check 1: Cloning t/s -> t/d"
+	./pxcp -vrA  t/s t/d
+	@echo ""; echo "--- Check 1A: ACL ACE entry copied"
+	getfacl t/s/f.txt | fgrep 'user:root:r--'
+	@echo ""; echo "--- Check 2: Cloning t/e -> t/d"
+	./pxcp -vrAp t/e t/d
+	@echo ""; echo "--- Check 3: t/d should be empty"
 	rmdir t/d
-	@echo "All tests passed."
+	@echo ""; echo "All tests passed."
 
 
 # Git targets
