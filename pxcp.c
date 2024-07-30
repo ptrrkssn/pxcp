@@ -250,7 +250,7 @@ file_clone(FSOBJ *src,
 #if defined(HAVE_MKOSTEMPSAT)
 	strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
 	tmpname = tmppath;
-	tfd = mkostempsat(dst->parent->fd, tmpname, 0, O_DIRECT);
+	tfd = mkostempsat(dst->parent->fd, tmpname, 0, f_sync ? O_DIRECT : 0);
 #elif defined(HAVE_MKOSTEMP)
 	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
 	tmpname = strrchr(tmppath, '/');
