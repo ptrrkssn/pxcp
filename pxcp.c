@@ -295,8 +295,10 @@ file_clone(FSOBJ *src,
 		    if (wr < 0) {
 			int t_errno = errno;
 
-			fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
-				argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+			fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
+				argv0, fsobj_path(dst->parent), tmpname,
+                                tfd, bufp, (long long int) src->stat.st_size,
+                                strerror(errno));
 			errno = t_errno;
 			rc = -1;
 			goto End;
@@ -332,8 +334,11 @@ file_clone(FSOBJ *src,
 		if (wr < 0) {
 		    int t_errno = errno;
 
-		    fprintf(stderr, "%s: Error: %s/%s: Write: %s\n",
-			    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+                    fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
+                            argv0, fsobj_path(dst->parent), tmpname,
+                            tfd, buf, (long long int) rr,
+                            strerror(errno));
+                    
 		    errno = t_errno;
 		    rc = -1;
 		    goto End;
