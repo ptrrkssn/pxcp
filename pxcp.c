@@ -250,13 +250,15 @@ file_clone(FSOBJ *src,
 #if defined(HAVE_MKOSTEMPSAT)
 	strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
 	tmpname = tmppath;
-	tfd = mkostempsat(dst->parent->fd, tmpname, 0, f_sync ? O_DIRECT : 0);
+	tfd = mkostempsat(dst->parent->fd, tmpname, 0,
+                          f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
 #elif defined(HAVE_MKOSTEMP)
 	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
 	tmpname = strrchr(tmppath, '/');
 	if (tmpname)
 	    ++tmpname;
-	tfd = mkostemp(tmppath, O_DIRECT);
+	tfd = mkostemp(tmppath,
+                       f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
 #elif defined(HAVE_MKSTEMP)
 	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
 	tmpname = strrchr(tmppath, '/');
@@ -267,7 +269,10 @@ file_clone(FSOBJ *src,
 	int n = 0;
 	do {
 	    sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
-	    tfd = openat(dst->parent->fd, tmpname, O_CREAT|O_EXCL|O_WRONLY, 0400);
+	    tfd = openat(dst->parent->fd, tmpname,
+                         O_CREAT|O_WRONLY|O_EXCL|
+                         (f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0),
+                         0400)
 	} while (tfd < 0 && errno == EEXIST && n < 5);
 	tmpname = tmppath;
 #endif
