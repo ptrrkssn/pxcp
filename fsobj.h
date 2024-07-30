@@ -38,6 +38,19 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+
+#ifndef AT_RESOLVE_BENEATH
+#define AT_RESOLVE_BENEATH 0
+#endif
+
+#ifndef O_PATH
+#ifdef O_SYMLINK
+#define O_PATH (O_RDONLY|O_SYMLINK)
+#else
+#define O_PATH (O_RDONLY)
+#endif
+#endif
 
 
 #define FSOBJ_MAGIC 0x5729043

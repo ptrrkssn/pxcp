@@ -187,7 +187,16 @@ fsobj_mkdir(FSOBJ *op,
     if (op->fd < 0)
         return -1;
 
-    if (fstatat(op->fd, "", &op->stat, AT_EMPTY_PATH) < 0) {
+#ifdef HAVE_FSTATAT
+#ifdef AT_EMPTY_PATH
+    rc = fstatat(op->fd, "", &op->stat, AT_EMPTY_PATH);
+#else
+    rc = fstatat(op->parent->fd, op->name, &op->stat, AT_SYMLINK_NOFOLLOW);
+#endif
+#else
+    rc = fstat(op->fd, &op->stat);
+#endif
+    if (rc < 0) {
         int s_errno = errno;
         close(op->fd);
         op->fd = -1;
@@ -237,7 +246,7 @@ fsobj_open(FSOBJ *op,
     if (f_debug > 2)
         fprintf(stderr, "** fsobj_open(%p)\n", op);
 
-    if (flags & O_PATH) {
+    if ((flags & (O_ACCMODE|O_PATH)) == O_PATH) {
         /* Open a path reference, and possibly open the object file descriptor */
 
         pfd = (parent ? (parent->fd >= 0 ? parent->fd : -1) : AT_FDCWD);
@@ -471,13 +480,19 @@ fsobj_refresh(FSOBJ *op) {
 int
 fsobj_reopen(FSOBJ *op,
 	     int flags) {
-    int nfd, rc;
+    int nfd;
 
 
-    rc = fsobj_isopen(op);
-    if (rc < 0)
-	return -1;
+    /* Sanity check */
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+	abort();
 
+    /* Already open with the right flags? */
+    if (op->flags == flags)
+        return 0;
+    
     if (op->parent && op->parent->fd != -1)
         nfd = openat(op->parent->fd, op->name, (flags&~O_CREAT));
     else {

@@ -59,10 +59,6 @@
 #include "acls.h"
 #include "fsobj.h"
 
-#ifndef AT_RESOLVE_BENEATH
-#define AT_RESOLVE_BENEATH 0
-#endif
-
 #ifdef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC
 #define st_mtim st_mtimespec
 #endif
@@ -185,7 +181,11 @@ symlink_clone(FSOBJ *src,
     ssize_t s_plen, d_plen;
     int rc = 0;
 
-    s_plen = readlinkat(src->parent->fd, src->name, s_pbuf, PATH_MAX);
+#ifdef HAVE_FREADLINK
+    s_plen = freadlink(src->fd, s_pbuf, sizeof(s_pbuf));
+#else
+    s_plen = readlinkat(src->parent->fd, src->name, s_pbuf, sizeof(s_pbuf));
+#endif
     if (s_plen < 0) {
         fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
                 argv0, fsobj_path(src), strerror(errno));
@@ -193,7 +193,11 @@ symlink_clone(FSOBJ *src,
     }
     s_pbuf[s_plen] = '\0';
 
-    d_plen = readlinkat(dst->parent->fd, dst->name, d_pbuf, PATH_MAX);
+#ifdef HAVE_FREADLINK
+    d_plen = freadlink(dst->fd, d_pbuf, sizeof(d_pbuf));
+#else
+    d_plen = readlinkat(dst->parent->fd, dst->name, d_pbuf, sizeof(d_pbuf));
+#endif
     if (d_plen < 0) {
 	if (errno != ENOENT) {
 	    fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
@@ -240,11 +244,18 @@ file_clone(FSOBJ *src,
     char tmppath[PATH_MAX], *tmpname = NULL;
 
 
-    if (!f_force && src->stat.st_size == dst->stat.st_size && ts_isless(&src->stat.st_mtim, &dst->stat.st_mtim))
+    /* Check if data is in need of cloning */
+    if (!f_force &&
+        src->stat.st_size == dst->stat.st_size &&
+        ts_isless(&src->stat.st_mtim, &dst->stat.st_mtim))
 	return 0;
 
-    if (src->flags & O_PATH)
-	fsobj_reopen(src, O_RDONLY|O_DIRECT);
+    /* Make sure object is opened for reading */
+    if (fsobj_reopen(src, O_RDONLY|O_DIRECT) < 0) {
+        fprintf(stderr, "%s: Error: %s: Reopening): %s\n",
+                argv0, fsobj_path(src), strerror(errno));
+        return -1;
+    }
 
     if (!f_dryrun) {
 #if defined(HAVE_MKOSTEMPSAT)
@@ -387,7 +398,17 @@ file_clone(FSOBJ *src,
 	}
 	tmpname = NULL;
 
-	fsobj_reopen(dst, O_PATH);
+	if (fsobj_reopen(dst, O_PATH) < 0) {
+	    int t_errno = errno;
+
+	    fprintf(stderr, "%s: Error: %s: Reopeing: %s\n",
+		    argv0, fsobj_path(dst), strerror(errno));
+	    errno = t_errno;
+	    rc = -1;
+	    goto End;
+        }
+          
+          
     }
     rc = 1;
 
@@ -416,10 +437,8 @@ dir_prune(FSOBJ *dp) {
     }
 
     /* Reopen destination directory for reading */
-    if ((dp->flags & O_PATH) != 0) {
-	if (fsobj_reopen(dp, O_RDONLY|O_DIRECTORY) < 0)
-	    return -1;
-    }
+    if (fsobj_reopen(dp, O_RDONLY|O_DIRECTORY) < 0)
+      return -1;
 
 
     fsobj_init(&d_obj);
