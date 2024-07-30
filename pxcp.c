@@ -1402,9 +1402,8 @@ int
 main(int argc,
      char *argv[]) {
     int i, j, k, rc = 0, c_rc;
-    char *tu = "s";
-    char *wu = "B";
 
+    
     argv0 = argv[0];
 
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
@@ -1548,7 +1547,8 @@ main(int argc,
  End:
     if (f_verbose || f_stats) {
 	double wb, wps, dt0, dt1, dt, dts;
-	char *wbu;
+	char *wbu, *wu, *tu;
+
 
 	clock_gettime(CLOCK_REALTIME, &t1);
 
@@ -1556,6 +1556,7 @@ main(int argc,
 	dt1 = t1.tv_sec+t1.tv_nsec/1000000000.0;
 	dt = dts = dt1-dt0;
 
+        tu = "s";
 	if (dt < 1.0) {
 	    dt *= 1000.0;
 	    tu = "ms";
@@ -1588,7 +1589,9 @@ main(int argc,
 	    wb /= 1000;
 	    wbu = "GB";
 	}
+        
 	wps = b_written / dts;
+        wu = "B/s";
 	if (wps > 1000) {
 	    wps /= 1000;
 	    wu = "kB/s";
@@ -1603,7 +1606,8 @@ main(int argc,
 	}
 
 	printf("[%lu scanned in %.1f %s (%.0f/%s); %lu added (%.0f/s), %lu updated, %lu deleted; %.1f %s written (%.0f %s)]\n",
-	       n_scanned, dt, tu, n_scanned/dt, tu, n_added, n_added/dt, n_updated, n_deleted,
+	       n_scanned, dt, tu, n_scanned/dt, tu,
+               n_added, n_added/dt, n_updated, n_deleted,
 	       wb, wbu, wps, wu);
     }
 
