@@ -62,28 +62,119 @@ extern int f_debug;
 #endif
 
 
-static int
-_fsobj_stat(FSOBJ *op,
+static char *
+_mode2str(mode_t m) {
+    switch (m & S_IFMT) {
+    case S_IFDIR:
+      return "Dir";
+    case S_IFREG:
+      return "File";
+    case S_IFLNK:
+      return "Symlink";
+    default:
+      return "?";
+    }
+}
+
+
+static char *
+strdupcat(const char *str,
+	  ...) {
+  va_list ap;
+  char *retval, *res;
+  const char *cp;
+  size_t reslen;
+
+  /* Get the length of the first string, plus 1 for ending NUL */
+  reslen = strlen(str)+1;
+
+  /* Add length of the other strings */
+  va_start(ap, str);
+  while ((cp = va_arg(ap, char *)) != NULL)
+    reslen += strlen(cp);
+  va_end(ap);
+
+  /* Allocate storage */
+  retval = res = malloc(reslen);
+  if (!retval)
+    return NULL;
+
+  /* Get the first string */
+  cp = str;
+  while (*cp)
+    *res++ = *cp++;
+  
+  /* And then append the rest */
+  va_start(ap, str);
+  while ((cp = va_arg(ap, char *)) != NULL) {
+    while (*cp)
+      *res++ = *cp++;
+  }
+  va_end(ap);
+
+  /* NUL-terminate the string */
+  *res = '\0';
+  return retval;
+}
+
+int
+fsobj_stat(FSOBJ *op,
 	   struct stat *sp) {
-    /* XXX: Can we do fstat() on an O_PATH fd? */
+    int rc;
+
+
+    if (!sp)
+      sp = &op->stat;
     
 #ifdef O_SYMLINK
     /* MacOS supports opening a reference to a Symbolic link */
-    if (op->fd >= 0)
-        return fstat(op->fd, sp);
+    if (op->fd >= 0) {
+        rc = fstat(op->fd, sp);
+        if (f_debug)
+          fprintf(stderr, "fsobj_stat(%s): fstat(%d) -> %d [t=%s, p=%o] (%s)\n",
+                  fsobj_path(op), op->fd, rc,
+                  _mode2str(sp->st_mode),
+                  sp->st_mode&ALLPERMS,
+                  rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
 #endif
     
 #ifdef HAVE_FSTATAT
 # ifdef AT_EMPTY_PATH
-    if (op->fd >= 0)
-        return fstatat(op->fd, "", sp, AT_EMPTY_PATH);
+    if (op->fd >= 0) {
+        rc = fstatat(op->fd, "", sp, AT_EMPTY_PATH);
+        if (f_debug)
+          fprintf(stderr, "fsobj_stat(%s): fstatat(%d, \"\") -> %d [t=%s, p=%o] (%s)\n",
+                  fsobj_path(op), op->fd, rc,
+                  _mode2str(sp->st_mode),
+                  sp->st_mode&ALLPERMS,
+                  rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
 # endif
-    if (op->parent->fd >= 0)
-        return fstatat(op->parent->fd, op->name, sp, AT_SYMLINK_NOFOLLOW);
+    if (op->parent->fd >= 0) {
+        rc = fstatat(op->parent->fd, op->name, sp, AT_SYMLINK_NOFOLLOW);
+        if (f_debug)
+          fprintf(stderr, "fsobj_stat(%s): fstatat(%d, \"%s\") -> %d [t=%s, p=%o] (%s)\n",
+                  fsobj_path(op), op->parent->fd, op->name, rc,
+                  _mode2str(sp->st_mode),
+                  sp->st_mode&ALLPERMS,
+                  rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
 #endif
 
     /* Slow but works */
-    return lstat(fsobj_path(op), sp);
+    rc = lstat(fsobj_path(op), sp);
+    if (f_debug)
+      fprintf(stderr, "fsobj_stat(%s): lstat(\"%s\") -> %d [t=%s, p=%o] (%s)\n",
+              fsobj_path(op), fsobj_path(op), rc,
+              _mode2str(sp->st_mode),
+              sp->st_mode&ALLPERMS,
+              rc < 0 ? strerror(errno) : "");
+    
+    return rc;
 }
 
 
@@ -213,7 +304,7 @@ fsobj_mkdir(FSOBJ *op,
     if (op->fd < 0)
         return -1;
 
-    rc = _fsobj_stat(op, &op->stat);
+    rc = fsobj_stat(op, NULL);
     if (rc < 0) {
         int s_errno = errno;
         close(op->fd);
@@ -254,6 +345,7 @@ fsobj_open(FSOBJ *op,
 	   mode_t mode) {
     struct stat sb;
     int fd, pfd;
+    int faked = 0;
 
 
     if (!op)
@@ -289,6 +381,7 @@ fsobj_open(FSOBJ *op,
             /* Object does not exist, generate a non-opened path reference object */
             memset(&sb, 0, sizeof(sb));
             sb.st_mode = mode;
+            faked = 1;
             goto Create;
         }
     } else {
@@ -350,10 +443,14 @@ fsobj_open(FSOBJ *op,
     op->name = strdup(name);
     op->fd = fd;
 
-    if (_fsobj_stat(op, &op->stat) < 0) {
+    if (!faked && fsobj_stat(op, NULL) < 0) {
+        if (f_debug)
+          fprintf(stderr, "fsobj_stat(%s): %s\n",
+                  fsobj_path(op), strerror(errno));
+        return -1;
     }
     
-    return (sb.st_mode&S_IFMT);
+    return (op->stat.st_mode&S_IFMT);
 }
 
 int
@@ -460,7 +557,7 @@ fsobj_refresh(FSOBJ *op) {
         abort();
 
     memset(&sb, 0, sizeof(sb));
-    rc = _fsobj_stat(op, &sb);
+    rc = fsobj_stat(op, &sb);
     if (rc < 0 && errno != ENOENT)
         return -1;
 
@@ -499,31 +596,42 @@ fsobj_reopen(FSOBJ *op,
     if (op->magic != FSOBJ_MAGIC)
 	abort();
 
-    /* Already open with the right flags? */
-    if (op->flags == flags)
-        return 0;
+    if (f_debug)
+        fprintf(stderr, "** fsobj_reopen(\"%s\", 0x%x)\n",
+                fsobj_path(op), flags);
     
-    if (op->parent && op->parent->fd != -1)
+#if 0
+    /* Already open with the right flags? */
+    if (op->flags == flags && op->fd >= 0)
+        return 0;
+#endif
+    if (op->parent && op->parent->fd != -1) {
         nfd = openat(op->parent->fd, op->name, (flags&~O_CREAT));
-    else {
-	nfd = -1;
+        if (f_debug)
+            fprintf(stderr, "** fsobj_reopen(%s): openat(%d, \"%s\", 0x%x) -> %d (%s)\n",
+                    fsobj_path(op),
+                    op->parent->fd, op->name, (flags&~O_CREAT),
+                    nfd, nfd < 0 ? strerror(errno) : "");
+    } else {
+        nfd = -1;
 	errno = EBADF;
     }
-
+              
     if (nfd < 0)
 	return -1;
 
-    if (dup2(nfd, op->fd) < 0) {
-	close(nfd);
-	return -1;
+    if (nfd != op->fd) {
+        if (dup2(nfd, op->fd) < 0) {
+            close(nfd);
+            return -1;
+        }
+        if (close(nfd) < 0)
+            return -1;
     }
-
+    
     op->flags = flags;
-    if (_fsobj_stat(op, &op->stat) < 0)
-      return -1;
-
-    if (close(nfd) < 0)
-	return -1;
+    if (fsobj_stat(op, NULL) < 0)
+        return -1;
 
     return 0;
 }
@@ -550,19 +658,37 @@ fsobj_close(FSOBJ *op) {
 
 int
 fsobj_delete(FSOBJ *op) {
-    int rc = fsobj_isopen(op);
-    if (rc < 0)
-	return -1;
-    else if (rc == 0) {
-	return 0;
+    int rc;
+  
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+	abort();
+    if (op->name == NULL)
+        abort();
+
+#ifdef HAVE_FUNLINKAT
+    if (!op->parent || op->parent->fd >= 0) {
+       int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
+       
+       rc = funlinkat(pfd, op->name, op->fd,
+                      AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0));
+       if (f_debug)
+           fprintf(stderr, "** fsobj_delete(\"%s\"): funlinkat(%d, \"%s\", %d) -> %d (%s)\n",
+                   fsobj_path(op), pfd, op->name, op->fd, rc, rc < 0 ? strerror(errno) : "");
+       if (rc < 0)
+           return -1;
     }
+#endif
 
-    if (funlinkat(op->parent->fd, op->name, op->fd,
-		  AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0)) < 0)
-	return -1;
-
+    if (S_ISDIR(op->stat.st_mode))
+        rc = rmdir(fsobj_path(op));
+    else
+        rc = unlink(fsobj_path(op));
+    if (rc < 0)
+        return -1;
+    
     fsobj_close(op);
-
     return 0;
 }
 
@@ -650,11 +776,9 @@ fsobj_readdir(FSOBJ *dp, FSOBJ *op) {
 
 
 int
-fsobj_rename(FSOBJ *op,
-	     char *name) {
-    int rc = 0;
-
-
+fsobj_chown(FSOBJ *op,
+	    uid_t uid,
+	    gid_t gid) {
     if (!op)
         abort();
     if (op->magic != FSOBJ_MAGIC)
@@ -662,28 +786,6 @@ fsobj_rename(FSOBJ *op,
     if (op->name == NULL)
         abort();
 
-    if (op->fd >= 0 && op->parent && op->parent->fd >= 0) {
-        if (renameat(op->parent->fd, op->name,
-                     op->parent->fd, name) < 0) {
-            return -1;
-        }
-    }
-
-    /* Update stat information for new object */
-    fsobj_refresh(op);
-
-    free(op->name);
-    op->name = strdup(name);
-    if (!op->name)
-	abort();
-
-    return rc;
-}
-
-int
-fsobj_chown(FSOBJ *op,
-	    uid_t uid,
-	    gid_t gid) {
 #ifdef O_SYMLINK
     if (op->fd >= 0)
         return fchown(op->fd, uid, gid);
@@ -694,8 +796,11 @@ fsobj_chown(FSOBJ *op,
     if (op->fd >= 0)
         return fchownat(op->fd, "", uid, gid, AT_EMPTY_PATH);
 # endif
-    if (op->parent->fd >= 0)
-        return fchownat(op->parent->fd, op->name, uid, gid, AT_SYMLINK_NOFOLLOW);
+    if (!op->parent || op->parent->fd >= 0) {
+        int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
+          
+        return fchownat(pfd, op->name, uid, gid, AT_SYMLINK_NOFOLLOW);
+    }
 #endif
 
     return lchown(fsobj_path(op), uid, gid);
@@ -705,8 +810,15 @@ fsobj_chown(FSOBJ *op,
 int
 fsobj_utimens(FSOBJ *op,
 	      struct timespec *tsv) {
-  struct timeval tvb[2];
+    struct timeval tvb[2];
   
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+	abort();
+    if (op->name == NULL)
+        abort();
+
 #ifdef O_SYMLINK
     if (op->fd >= 0)
         return futimens(op->fd, tsv);
@@ -717,17 +829,130 @@ fsobj_utimens(FSOBJ *op,
     if (op->fd >= 0)
         return utimensat(op->fd, "", tsv, AT_EMPTY_PATH);
 # endif
-    if (op->parent->fd >= 0)
-        return utimensat(op->parent->fd, 
-			 op->name,
-			 tsv,
-			 AT_SYMLINK_NOFOLLOW);
+    if (!op->parent || op->parent->fd >= 0) {
+        int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
+      
+        return utimensat(pfd, op->name, tsv, AT_SYMLINK_NOFOLLOW);
+    }
 #endif
 
     tvb[0].tv_sec  = tsv[0].tv_sec;
     tvb[0].tv_usec = tsv[0].tv_nsec/1000;
     tvb[1].tv_sec  = tsv[1].tv_sec;
     tvb[1].tv_usec = tsv[1].tv_nsec/1000;
+    
     return lutimes(fsobj_path(op), &tvb[0]);
 }
 
+int
+fsobj_chmod(FSOBJ *op,
+            mode_t mode) {
+    int rc;
+
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+	abort();
+    if (op->name == NULL)
+        abort();
+
+#ifdef O_SYMLINK
+    if (op->fd >= 0) {
+        rc = fchmod(op->fd, mode);
+        if (f_debug)
+            fprintf(stderr, "fsobj_chmod(%s): fchmod(%d, 0%o -> 0%o) -> %d (%d, %s)\n",
+                    fsobj_path(op), op->fd, (op->stat.st_mode&ALLPERMS), mode, rc,
+                    errno,
+                    rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
+#endif
+  
+#ifdef HAVE_FCHMODAT
+# if defined(AT_EMPTY_PATH) && !defined(__linux__)
+    if (op->fd >= 0) {
+        rc = fchmodat(op->fd, "", mode, AT_EMPTY_PATH);
+        if (f_debug)
+            fprintf(stderr, "fsobj_chmod(%s): fchmodat(%d, \"\", 0%o -> 0%o) -> %d (%d, %s)\n",
+                    fsobj_path(op), op->fd, (op->stat.st_mode&ALLPERMS), mode, rc,
+                    errno,
+                    rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
+        
+# endif
+    if (!op->parent || op->parent->fd >= 0) {
+        int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
+          
+        rc = fchmodat(pfd, op->name, mode, AT_SYMLINK_NOFOLLOW);
+        if (f_debug)
+            fprintf(stderr, "fsobj_chmod(%s): fchmodat(%d, \"%s\", 0%o -> 0%o) -> %d (%d, %s)\n",
+                    fsobj_path(op), op->parent->fd, op->name,
+                    (op->stat.st_mode&ALLPERMS), mode, rc,
+                    errno,
+                    rc < 0 ? strerror(errno) : "");
+        return rc;
+    }
+        
+#endif
+
+    rc = lchmod(fsobj_path(op), mode);
+    if (f_debug)
+        fprintf(stderr, "fsobj_chmod(%s): lchmod(0%o -> 0%o) -> %d (%d, %s)\n",
+                fsobj_path(op), (op->stat.st_mode&ALLPERMS), mode, rc,
+                errno, rc < 0 ? strerror(errno) : "");
+    return rc;
+}
+
+
+char *
+fsobj_typestr(FSOBJ *op) {
+    if (!op)
+        return "Null";
+    if (op->magic != FSOBJ_MAGIC)
+        return "Invalid";
+    if (op->name == NULL)
+        return "Init";
+
+    return _mode2str(op->stat.st_mode);
+}
+
+
+int
+fsobj_rename(FSOBJ *op,
+             char *name) {
+    int rc;
+    char *tpath = NULL;
+    
+
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+	abort();
+    if (op->name == NULL)
+        abort();
+
+#ifdef HAVE_RENAMEAT
+    if (!op->parent || op->parent->fd >= 0) {
+        int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
+      
+        rc = renameat(pfd, op->name, op->parent->fd, name);
+        goto End;
+    }
+#endif
+
+    /* If nothing else works, do it old-style */
+    tpath = strdupcat(op->parent ? fsobj_path(op->parent) : ".", "/", name, NULL);
+    rc = rename(fsobj_path(op), tpath);
+        
+ End:
+    if (tpath)
+      free(tpath);
+    
+    if (rc >= 0) {
+        free(op->name);
+        op->name = strdup(name);
+        
+    }
+    return rc;
+}

@@ -4483,40 +4483,16 @@ then :
 
 fi
 
-ac_fn_c_check_func "$LINENO" "funlinkat" "ac_cv_func_funlinkat"
-if test "x$ac_cv_func_funlinkat" = xyes
+ac_fn_c_check_func "$LINENO" "fstatat" "ac_cv_func_fstatat"
+if test "x$ac_cv_func_fstatat" = xyes
 then :
-  printf "%s\n" "#define HAVE_FUNLINKAT 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "unlinkat" "ac_cv_func_unlinkat"
-if test "x$ac_cv_func_unlinkat" = xyes
-then :
-  printf "%s\n" "#define HAVE_UNLINKAT 1" >>confdefs.h
+  printf "%s\n" "#define HAVE_FSTATAT 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "fchownat" "ac_cv_func_fchownat"
 if test "x$ac_cv_func_fchownat" = xyes
 then :
   printf "%s\n" "#define HAVE_FCHOWNAT 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "readlinkat" "ac_cv_func_readlinkat"
-if test "x$ac_cv_func_readlinkat" = xyes
-then :
-  printf "%s\n" "#define HAVE_READLINKAT 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "freadlink" "ac_cv_func_freadlink"
-if test "x$ac_cv_func_freadlink" = xyes
-then :
-  printf "%s\n" "#define HAVE_FREADLINK 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "symlinkat" "ac_cv_func_symlinkat"
-if test "x$ac_cv_func_symlinkat" = xyes
-then :
-  printf "%s\n" "#define HAVE_SYMLINKAT 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "openat" "ac_cv_func_openat"
@@ -4535,6 +4511,38 @@ ac_fn_c_check_func "$LINENO" "fchmodat" "ac_cv_func_fchmodat"
 if test "x$ac_cv_func_fchmodat" = xyes
 then :
   printf "%s\n" "#define HAVE_FCHMODAT 1" >>confdefs.h
+
+fi
+
+ac_fn_c_check_func "$LINENO" "funlinkat" "ac_cv_func_funlinkat"
+if test "x$ac_cv_func_funlinkat" = xyes
+then :
+  printf "%s\n" "#define HAVE_FUNLINKAT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "unlinkat" "ac_cv_func_unlinkat"
+if test "x$ac_cv_func_unlinkat" = xyes
+then :
+  printf "%s\n" "#define HAVE_UNLINKAT 1" >>confdefs.h
+
+fi
+
+ac_fn_c_check_func "$LINENO" "readlinkat" "ac_cv_func_readlinkat"
+if test "x$ac_cv_func_readlinkat" = xyes
+then :
+  printf "%s\n" "#define HAVE_READLINKAT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "freadlink" "ac_cv_func_freadlink"
+if test "x$ac_cv_func_freadlink" = xyes
+then :
+  printf "%s\n" "#define HAVE_FREADLINK 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "symlinkat" "ac_cv_func_symlinkat"
+if test "x$ac_cv_func_symlinkat" = xyes
+then :
+  printf "%s\n" "#define HAVE_SYMLINKAT 1" >>confdefs.h
 
 fi
 

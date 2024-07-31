@@ -63,7 +63,7 @@ setup-check-acl:
 	@if [ `uname -s` = "Linux" ]; then setfacl -m root:r t/s/f.txt; else setfacl -m user:root:r::allow t/s/f.txt; fi
 
 setup-check-tree:
-	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && touch t/d/d && echo "Hello, World!" >t/s/d/f2.txt
+	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && echo "Hello, World!" >t/s/d/f2.txt
 
 setup-check: setup-check-tree setup-check-acl
 
@@ -81,7 +81,7 @@ check-3: setup-check
 
 check-4: setup-check
 	@echo ""; echo "--- Check 4: Cloning t/s -> t/d (again, with prune)"
-	@./pxcp -vrAp  t/s t/d && echo "--> OK"
+	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAp  t/s t/d && echo "--> OK"
 
 check-5: check-4
 	@echo ""; echo "--- Check 5: ls -alR"

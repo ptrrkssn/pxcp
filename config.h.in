@@ -48,6 +48,9 @@
 /* Define to 1 if you have the `freadlink' function. */
 #undef HAVE_FREADLINK
 
+/* Define to 1 if you have the `fstatat' function. */
+#undef HAVE_FSTATAT
+
 /* Define to 1 if you have the `funlinkat' function. */
 #undef HAVE_FUNLINKAT
 

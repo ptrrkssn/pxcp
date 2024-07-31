@@ -225,8 +225,8 @@ symlink_clone(FSOBJ *src,
 	rc = 1;
     }
 
-    if (fsobj_refresh(dst) < 0) {
-        fprintf(stderr, "%s: Error: %s: Refresh(symlink): %s\n",
+    if (fsobj_stat(dst, NULL) < 0) {
+        fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
                 argv0, fsobj_path(dst), strerror(errno));
         return -1;
     }
@@ -257,163 +257,163 @@ file_clone(FSOBJ *src,
         return -1;
     }
 
-    if (!f_dryrun) {
+    if (f_dryrun)
+        return 0;
+    
 #if defined(HAVE_MKOSTEMPSAT)
-	strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
-	tmpname = tmppath;
-	tfd = mkostempsat(dst->parent->fd, tmpname, 0,
+    strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
+    tmpname = tmppath;
+    tfd = mkostempsat(dst->parent->fd, tmpname, 0,
                           f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
 #elif defined(HAVE_MKOSTEMP)
-	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
-	tmpname = strrchr(tmppath, '/');
-	if (tmpname)
-	    ++tmpname;
-	tfd = mkostemp(tmppath,
-                       f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
+    sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
+    tmpname = strrchr(tmppath, '/');
+    if (tmpname)
+        ++tmpname;
+    tfd = mkostemp(tmppath,
+                   f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
 #elif defined(HAVE_MKSTEMP)
-	sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
-	tmpname = strrchr(tmppath, '/');
-	if (tmpname)
-	    ++tmpname;
-	tfd = mkstemp(tmppath);
+    sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
+    tmpname = strrchr(tmppath, '/');
+    if (tmpname)
+        ++tmpname;
+    tfd = mkstemp(tmppath);
 #else
-	int n = 0;
-	do {
-	    sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
-	    tfd = openat(dst->parent->fd, tmpname,
-                         O_CREAT|O_WRONLY|O_EXCL|
-                         (f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0),
-                         0400)
-	} while (tfd < 0 && errno == EEXIST && n < 5);
-	tmpname = tmppath;
+    int n = 0;
+    do {
+        sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
+        tfd = openat(dst->parent->fd, tmpname,
+                     O_CREAT|O_WRONLY|O_EXCL|
+                     (f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0),
+                     0400);
+    } while (tfd < 0 && errno == EEXIST && n < 5);
+    tmpname = tmppath;
 #endif
-	if (tfd < 0) {
-	    fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
-		    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-	    return -1;
-	}
+    if (tfd < 0) {
+      fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
+              argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+      return -1;
+    }
 
-	if (f_mmap) {
-	    if (src->stat.st_size > 0) {
-		bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-		if (bufp == MAP_FAILED) {
-		    fprintf(stderr, "%s: Error: %s: mmap: %s\n",
-			    argv0, fsobj_path(src), strerror(errno));
-		    rc = -1;
-		    goto End;
-		}
+    if (f_mmap) {
+        if (src->stat.st_size > 0) {
+            bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
+            if (bufp == MAP_FAILED) {
+                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+                        argv0, fsobj_path(src), strerror(errno));
+                rc = -1;
+                goto End;
+            }
+        
+            /* Ignore errors */
+            (void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
 
-		/* Ignore errors */
-		(void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-
-		if (tfd >= 0) {
-		    wr = write(tfd, bufp, src->stat.st_size);
-		    if (wr < 0) {
-			int t_errno = errno;
-
-			fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
-				argv0, fsobj_path(dst->parent), tmpname,
-                                tfd, bufp, (long long int) src->stat.st_size,
-                                strerror(errno));
-			errno = t_errno;
-			rc = -1;
-			goto End;
-		    }
-
-		    b_written += wr;
-
-		    if (wr != src->stat.st_size) {
-			fprintf(stderr, "%s: Error: %s/%s: Short write\n",
-				argv0, fsobj_path(dst->parent), tmpname);
-			errno = EPIPE;
-			rc = -1;
-			goto End;
-		    }
-
-		}
-	    }
-	} else {
-	    char buf[256*1024];
-
-	    if (ftruncate(tfd, src->stat.st_size) < 0) {
-		int t_errno = errno;
-
-		fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
-			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-		errno = t_errno;
-		rc = -1;
-		goto End;
-	    }
-
-	    while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
-		wr = write(tfd, buf, rr);
-		if (wr < 0) {
-		    int t_errno = errno;
-
+            if (tfd >= 0) {
+                wr = write(tfd, bufp, src->stat.st_size);
+                if (wr < 0) {
+                    int t_errno = errno;
+                    
                     fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
                             argv0, fsobj_path(dst->parent), tmpname,
-                            tfd, buf, (long long int) rr,
+                            tfd, bufp, (long long int) src->stat.st_size,
                             strerror(errno));
-                    
-		    errno = t_errno;
-		    rc = -1;
-		    goto End;
-		}
-
-		b_written += wr;
-
-		if (wr != rr) {
-		    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
-			    argv0, fsobj_path(dst->parent), tmpname);
-		    errno = EPIPE;
-		    rc = -1;
-		    goto End;
-		}
-
-	    }
-	    if (rr < 0) {
-		int t_errno = errno;
-
-		fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
-			argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-		errno = t_errno;
-		rc = -1;
-		goto End;
-	    }
-	}
-
-	close(tfd);
-
-	if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
-	    int t_errno = errno;
-
-	    fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
-		    argv0,
-		    fsobj_path(dst->parent), tmpname,
-		    fsobj_path(dst->parent), dst->name,
-		    strerror(errno));
-	    errno = t_errno;
-	    rc = -1;
-	    goto End;
-	}
-	tmpname = NULL;
-
-	if (fsobj_reopen(dst, O_PATH) < 0) {
-	    int t_errno = errno;
-
-	    fprintf(stderr, "%s: Error: %s: Reopeing: %s\n",
-		    argv0, fsobj_path(dst), strerror(errno));
-	    errno = t_errno;
-	    rc = -1;
-	    goto End;
+                    errno = t_errno;
+                    rc = -1;
+                    goto End;
+                }
+                
+                b_written += wr;
+                
+                if (wr != src->stat.st_size) {
+                    fprintf(stderr, "%s: Error: %s/%s: Short write\n",
+                            argv0, fsobj_path(dst->parent), tmpname);
+                    errno = EPIPE;
+                    rc = -1;
+                    goto End;
+                }
+                
+            }
         }
-          
-          
+    } else {
+        char buf[256*1024];
+      
+        if (ftruncate(tfd, src->stat.st_size) < 0) {
+            int t_errno = errno;
+            
+            fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
+                    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+            errno = t_errno;
+            rc = -1;
+            goto End;
+        }
+
+        while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
+            wr = write(tfd, buf, rr);
+            if (wr < 0) {
+                int t_errno = errno;
+            
+                fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
+                        argv0, fsobj_path(dst->parent), tmpname,
+                        tfd, buf, (long long int) rr,
+                        strerror(errno));
+                
+                errno = t_errno;
+                rc = -1;
+                goto End;
+            }
+
+            b_written += wr;
+            
+            if (wr != rr) {
+                fprintf(stderr, "%s: Error: %s/%s: Short write\n",
+                        argv0, fsobj_path(dst->parent), tmpname);
+                errno = EPIPE;
+                rc = -1;
+                goto End;
+            }
+            
+        }
+        if (rr < 0) {
+            int t_errno = errno;
+
+            fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
+                    argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+            errno = t_errno;
+            rc = -1;
+            goto End;
+        }
     }
-    rc = 1;
+
+    close(tfd);
+    
+    if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
+        int t_errno = errno;
+      
+        fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
+                argv0,
+                fsobj_path(dst->parent), tmpname,
+              
+                fsobj_path(dst->parent), dst->name,
+                strerror(errno));
+        errno = t_errno;
+        rc = -1;
+        goto End;
+    }
+
+    tmpname = NULL;
+
+    if (fsobj_reopen(dst, O_RDONLY) < 0) {
+      int t_errno = errno;
+      
+      fprintf(stderr, "%s: Error: %s: Reopening: %s\n",
+              argv0, fsobj_path(dst), strerror(errno));
+      errno = t_errno;
+      rc = -1;
+      goto End;
+    }
+          
 
  End:
-
     if (bufp)
         munmap(bufp, src->stat.st_size);
     if (tfd >= 0)
@@ -576,34 +576,26 @@ group_clone(FSOBJ *src,
 int
 mode_clone(FSOBJ *src,
            FSOBJ *dst) {
-    int rc = 0;
-
-
+    if (f_dryrun)
+        return 0;
+    
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
-        if (!f_dryrun) {
-            if (fchmodat(dst->parent ? dst->parent->fd : AT_FDCWD,
-			 dst->name,
-			 (src->stat.st_mode&ALLPERMS), AT_SYMLINK_NOFOLLOW) < 0) {
-                if (errno == ENOTSUP && S_ISLNK(dst->stat.st_mode)) {
-                    /* Linux doesn't support changing permissions on symbolic links */
-                    rc = 0;
-                    goto End;
-                }
-
-                fprintf(stderr, "%s: Error: %s: fchmodat(0%o): %s\n",
-                        argv0,
-                        fsobj_path(dst),
-                        (src->stat.st_mode&ALLPERMS),
-                        strerror(errno));
-                rc = -1;
-                goto End;
-            }
+        if (fsobj_chmod(dst, (src->stat.st_mode&ALLPERMS)) < 0) {
+            if (errno == EOPNOTSUPP && S_ISLNK(dst->stat.st_mode))
+                /* Linux doesn't support changing permissions on symbolic links */
+                return 0;
+      
+            fprintf(stderr, "%s: Error: %s: Setting Mode Bits(0%o -> 0%o): %s\n",
+                    argv0,
+                    fsobj_path(dst),
+                    (dst->stat.st_mode&ALLPERMS),
+                    (src->stat.st_mode&ALLPERMS),
+                    strerror(errno));
+            return -1;
         }
-        rc = 1;
     }
 
- End:
-    return rc;
+    return 0;
 }
 
 
@@ -1061,33 +1053,6 @@ dir_list(FSOBJ *dirp,
 
 
 int
-fsobj_utimens(FSOBJ *op,
-	      struct timespec *tv) {
-  int rc;
-  
-#if defined(O_SYMLINK) && defined(HAVE_FUTIMENS)
-  /* MacOS */
-  rc = futimens(op->fd, tv);
-#else
-# ifdef HAVE_UTIMENSAT
-#  ifdef AT_EMPTY_PATH
-  rc = utimensat(op->fd, "", tv, AT_EMPTY_PATH);
-#  else
-  rc = utimensat(op->parent->fd, 
-		 op->name,
-		 tv,
-		 AT_SYMLINK_NOFOLLOW);
-#  endif
-# else
-  errno = ENOSYS;
-  rc = -1;
-# endif
-#endif
-
-  return rc;
-}
-
-int
 times_clone(FSOBJ *src,
             FSOBJ *dst) {
     int rc = 0;
@@ -1132,26 +1097,6 @@ times_clone(FSOBJ *src,
 }
 
 
-char *
-fsobj_typestr(FSOBJ *op) {
-    if (!op)
-        return "Null";
-    if (op->magic != FSOBJ_MAGIC)
-        return "Invalid";
-    if (op->name == NULL)
-        return "Init";
-
-    switch (op->stat.st_mode & S_IFMT) {
-    case S_IFDIR:
-        return "Dir";
-    case S_IFREG:
-        return "File";
-    case S_IFLNK:
-        return "Symlink";
-    default:
-        return "?";
-    }
-}
 
 
 
@@ -1186,6 +1131,12 @@ clone(FSOBJ *src,
     if (d_type > 0 && d_type != s_type) {
         /* Destination is different type -> delete it */
 
+        if (!f_prune) {
+            fprintf(stderr, "%s: Error: %s -> %s: Destination object is different type - not copying\n",
+                    argv0, fsobj_path(src), fsobj_path(dst));
+            return -1;
+        }
+        
         if (f_debug)
             fprintf(stderr, "*** clone: different destination type - deleting\n");
 
@@ -1439,10 +1390,14 @@ int
 main(int argc,
      char *argv[]) {
     int i, j, k, rc = 0, c_rc;
-
+    char *s;
     
     argv0 = argv[0];
 
+    s = getenv("DEBUG");
+    if (s)
+      (void) sscanf(s, "%d", &f_debug);
+    
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
 	for (j = 1; argv[i][j]; j++) {
             int rv, *vp = NULL;

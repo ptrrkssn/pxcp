@@ -127,6 +127,26 @@ acl_diff(acl_t src,
 	    return 2;
 
 	switch (s_t) {
+#ifdef ACL_USER_OBJ
+        case ACL_USER_OBJ:
+          break;
+#endif
+#ifdef ACL_GROUP_OBJ
+        case ACL_GROUP_OBJ:
+          break;
+#endif
+#ifdef ACL_MASK
+        case ACL_MASK:
+          break;
+#endif
+#ifdef ACL_OTHER
+        case ACL_OTHER:
+          break;
+#endif
+#ifdef ACL_EVERYONE
+        case ACL_EVERYONE:
+          break;
+#endif
 #ifdef ACL_USER
 	case ACL_USER:
 	    s_q = acl_get_qualifier(s_e);

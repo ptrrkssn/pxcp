@@ -148,4 +148,15 @@ extern int
 fsobj_utimens(FSOBJ *op,
 	      struct timespec *tv);
 
+extern int
+fsobj_chmod(FSOBJ *op,
+            mode_t mode);
+
+extern char *
+fsobj_typestr(FSOBJ *op);
+
+extern int
+fsobj_stat(FSOBJ *op,
+	   struct stat *sp);
+
 #endif
