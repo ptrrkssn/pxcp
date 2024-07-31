@@ -508,6 +508,7 @@ dir_prune(FSOBJ *dp) {
 }
 
 
+
 int
 owner_clone(FSOBJ *src,
              FSOBJ *dst) {
@@ -521,8 +522,9 @@ owner_clone(FSOBJ *src,
                         argv0, fsobj_path(dst));
         } else {
             if (!f_dryrun) {
-                if (fchownat(dst->fd, "", src->stat.st_uid, -1, AT_EMPTY_PATH) < 0) {
-                    fprintf(stderr, "%s: Error: %s: fchownat(uid=%d): %s\n",
+	        int f_rc = fsobj_chown(dst, src->stat.st_uid, -1);
+		if (f_rc < 0) {
+                    fprintf(stderr, "%s: Error: %s: Change Owner (uid=%d): %s\n",
                             argv0,
                             fsobj_path(dst),
                             src->stat.st_uid,
@@ -552,8 +554,9 @@ group_clone(FSOBJ *src,
                         argv0, fsobj_path(dst));
         } else {
             if (!f_dryrun) {
-                if (fchownat(dst->fd, "", -1, src->stat.st_gid, AT_EMPTY_PATH) < 0) {
-                    fprintf(stderr, "%s: Error: %s: fchownat(gid=%d): %s\n",
+	        int f_rc = fsobj_chown(dst, src->stat.st_uid, -1);
+		if (f_rc < 0) {
+		  fprintf(stderr, "%s: Error: %s: Change Group (gid=%d): %s\n",
                             argv0,
                             fsobj_path(dst),
                             src->stat.st_gid,
@@ -1058,11 +1061,37 @@ dir_list(FSOBJ *dirp,
 
 
 int
+fsobj_utimens(FSOBJ *op,
+	      struct timespec *tv) {
+  int rc;
+  
+#if defined(O_SYMLINK) && defined(HAVE_FUTIMENS)
+  /* MacOS */
+  rc = futimens(op->fd, tv);
+#else
+# ifdef HAVE_UTIMENSAT
+#  ifdef AT_EMPTY_PATH
+  rc = utimensat(op->fd, "", tv, AT_EMPTY_PATH);
+#  else
+  rc = utimensat(op->parent->fd, 
+		 op->name,
+		 tv,
+		 AT_SYMLINK_NOFOLLOW);
+#  endif
+# else
+  errno = ENOSYS;
+  rc = -1;
+# endif
+#endif
+
+  return rc;
+}
+
+int
 times_clone(FSOBJ *src,
             FSOBJ *dst) {
     int rc = 0;
 
-#if HAVE_UTIMENSAT
 #if HAVE_STRUCT_STAT_ST_BIRTHTIM_TV_SEC
     if (f_force || ts_isless(&dst->stat.st_birthtim, &src->stat.st_birthtim)) {
 	if (!f_dryrun) {
@@ -1071,11 +1100,8 @@ times_clone(FSOBJ *src,
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_birthtim;
 
-	    if (utimensat(dst->fd >= 0 ? dst->fd : dst->parent->fd,
-			  dst->fd >= 0 ? "" : dst->name,
-			  times,
-			  dst->fd >= 0 ? AT_EMPTY_PATH : AT_SYMLINK_NOFOLLOW) < 0) {
-		fprintf(stderr, "%s: Error: %s: utimes(btime): %s\n",
+	    if (fsobj_utimens(dst, times) < 0) {
+		fprintf(stderr, "%s: Error: %s: Reset Birth Time: %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
 		goto End;
@@ -1091,11 +1117,8 @@ times_clone(FSOBJ *src,
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_mtim;
 
-	    if (utimensat(dst->fd >= 0 ? dst->fd : dst->parent->fd,
-			  dst->fd >= 0 ? "" : dst->name,
-			  times,
-			  dst->fd >= 0 ? AT_EMPTY_PATH : AT_SYMLINK_NOFOLLOW) < 0) {
-		fprintf(stderr, "%s: Error: %s: utimes(mtime): %s\n",
+	    if (fsobj_utimens(dst, times) < 0) {
+		fprintf(stderr, "%s: Error: %s: Reset Modification Time: %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
 		goto End;
@@ -1103,11 +1126,6 @@ times_clone(FSOBJ *src,
 	}
         rc = 1;
     }
-#else
-    abort();
-    errno = ENOSYS;
-    rc = -1;
-#endif
 
  End:
     return rc;
@@ -1143,6 +1161,10 @@ clone(FSOBJ *src,
       FSOBJ *dst) {
     int rc = 0, s_type = -1, d_type = -1;
     int mdiff = 0;
+    FSOBJ s_obj, d_obj;
+    int s_rc, d_rc;
+
+
 
 
     if (f_debug)
@@ -1242,10 +1264,6 @@ clone(FSOBJ *src,
 
     switch (s_type) {
     case S_IFDIR:
-        FSOBJ s_obj, d_obj;
-        int s_rc, d_rc;
-
-
         if (f_debug)
             fprintf(stderr, "*** clone: Doing subdirectory\n");
 

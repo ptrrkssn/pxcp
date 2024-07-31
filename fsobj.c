@@ -49,6 +49,8 @@ extern int f_debug;
 #include <errno.h>
 #include <time.h>
 #include <dirent.h>
+#include <sys/types.h>
+#include <sys/time.h>
 
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
@@ -59,6 +61,30 @@ extern int f_debug;
 #define funlinkat(dirfd,name,fd,flags) unlinkat(dirfd,name,flags)
 #endif
 
+
+static int
+_fsobj_stat(FSOBJ *op,
+	   struct stat *sp) {
+    /* XXX: Can we do fstat() on an O_PATH fd? */
+    
+#ifdef O_SYMLINK
+    /* MacOS supports opening a reference to a Symbolic link */
+    if (op->fd >= 0)
+        return fstat(op->fd, sp);
+#endif
+    
+#ifdef HAVE_FSTATAT
+# ifdef AT_EMPTY_PATH
+    if (op->fd >= 0)
+        return fstatat(op->fd, "", sp, AT_EMPTY_PATH);
+# endif
+    if (op->parent->fd >= 0)
+        return fstatat(op->parent->fd, op->name, sp, AT_SYMLINK_NOFOLLOW);
+#endif
+
+    /* Slow but works */
+    return lstat(fsobj_path(op), sp);
+}
 
 
 void
@@ -187,15 +213,7 @@ fsobj_mkdir(FSOBJ *op,
     if (op->fd < 0)
         return -1;
 
-#ifdef HAVE_FSTATAT
-#ifdef AT_EMPTY_PATH
-    rc = fstatat(op->fd, "", &op->stat, AT_EMPTY_PATH);
-#else
-    rc = fstatat(op->parent->fd, op->name, &op->stat, AT_SYMLINK_NOFOLLOW);
-#endif
-#else
-    rc = fstat(op->fd, &op->stat);
-#endif
+    rc = _fsobj_stat(op, &op->stat);
     if (rc < 0) {
         int s_errno = errno;
         close(op->fd);
@@ -320,14 +338,6 @@ fsobj_open(FSOBJ *op,
     if (fd < 0)
         return -1;
 
-    if (fstatat(fd, "", &sb, AT_EMPTY_PATH) < 0) {
-        int s_errno = errno;
-
-	close(fd);
-        errno = s_errno;
-	return -1;
-    }
-
 
  Create:
     fsobj_reset(op);
@@ -337,10 +347,12 @@ fsobj_open(FSOBJ *op,
 	parent->refcnt++;
 
     op->flags = flags;
-    op->stat = sb;
     op->name = strdup(name);
     op->fd = fd;
 
+    if (_fsobj_stat(op, &op->stat) < 0) {
+    }
+    
     return (sb.st_mode&S_IFMT);
 }
 
@@ -439,7 +451,7 @@ fsobj_path(FSOBJ *op) {
 int
 fsobj_refresh(FSOBJ *op) {
     struct stat sb;
-    int pfd, rc;
+    int rc;
 
     /* Sanity checks */
     if (!op)
@@ -448,9 +460,7 @@ fsobj_refresh(FSOBJ *op) {
         abort();
 
     memset(&sb, 0, sizeof(sb));
-    pfd = op->parent && op->parent->fd >= 0 ? op->parent->fd : AT_FDCWD;
-
-    rc = fstatat(pfd, op->name, &sb, AT_SYMLINK_NOFOLLOW|AT_RESOLVE_BENEATH);
+    rc = _fsobj_stat(op, &sb);
     if (rc < 0 && errno != ENOENT)
         return -1;
 
@@ -503,17 +513,14 @@ fsobj_reopen(FSOBJ *op,
     if (nfd < 0)
 	return -1;
 
-    if (fstatat(nfd, "", &op->stat, AT_EMPTY_PATH) < 0) {
-	close(nfd);
-	return -1;
-    }
-
     if (dup2(nfd, op->fd) < 0) {
 	close(nfd);
 	return -1;
     }
 
     op->flags = flags;
+    if (_fsobj_stat(op, &op->stat) < 0)
+      return -1;
 
     if (close(nfd) < 0)
 	return -1;
@@ -672,3 +679,55 @@ fsobj_rename(FSOBJ *op,
 
     return rc;
 }
+
+int
+fsobj_chown(FSOBJ *op,
+	    uid_t uid,
+	    gid_t gid) {
+#ifdef O_SYMLINK
+    if (op->fd >= 0)
+        return fchown(op->fd, uid, gid);
+#endif
+
+#ifdef HAVE_FCHOWNAT
+# ifdef AT_EMPTY_PATH
+    if (op->fd >= 0)
+        return fchownat(op->fd, "", uid, gid, AT_EMPTY_PATH);
+# endif
+    if (op->parent->fd >= 0)
+        return fchownat(op->parent->fd, op->name, uid, gid, AT_SYMLINK_NOFOLLOW);
+#endif
+
+    return lchown(fsobj_path(op), uid, gid);
+}
+
+
+int
+fsobj_utimens(FSOBJ *op,
+	      struct timespec *tsv) {
+  struct timeval tvb[2];
+  
+#ifdef O_SYMLINK
+    if (op->fd >= 0)
+        return futimens(op->fd, tsv);
+#endif
+  
+#ifdef HAVE_UTIMENSAT
+# ifdef AT_EMPTY_PATH
+    if (op->fd >= 0)
+        return utimensat(op->fd, "", tsv, AT_EMPTY_PATH);
+# endif
+    if (op->parent->fd >= 0)
+        return utimensat(op->parent->fd, 
+			 op->name,
+			 tsv,
+			 AT_SYMLINK_NOFOLLOW);
+#endif
+
+    tvb[0].tv_sec  = tsv[0].tv_sec;
+    tvb[0].tv_usec = tsv[0].tv_nsec/1000;
+    tvb[1].tv_sec  = tsv[1].tv_sec;
+    tvb[1].tv_usec = tsv[1].tv_nsec/1000;
+    return lutimes(fsobj_path(op), &tvb[0]);
+}
+

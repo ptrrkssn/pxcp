@@ -33,6 +33,14 @@
 
 #include "acls.h"
 
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+
+#ifdef __DARWIN_ACL_EXTENDED_ALLOW
+#include <membership.h>
+#endif
+
 #ifdef ACL_EXECUTE
 static acl_perm_t acl_perms_posix[] = {
     ACL_EXECUTE,
@@ -73,10 +81,16 @@ static int acl_flags_nfs4[] = {
 #endif
 
 
+extern int f_debug;
+
+
 int
 acl_diff(acl_t src,
 	 acl_t dst) {
-    int j, d_rc, s_rc;
+    int d_rc, s_rc;
+#ifndef __DARWIN_ACL_EXTENDED_ALLOW
+    int j;
+#endif
     acl_entry_t s_e, d_e;
 
 
@@ -98,19 +112,22 @@ acl_diff(acl_t src,
 	acl_permset_t s_ps, d_ps;
 	acl_tag_t s_t, d_t;
 	void *s_q, *d_q;
-	uid_t s_u, d_u;
-	gid_t s_g, d_g;
+	uid_t s_ugid, d_ugid;
 
 
 	/* OWNER@, GROUP@, user:, group:, EVERYONE@ etc */
-	if (acl_get_tag_type(s_e, &s_t) < 0)
+	if (acl_get_tag_type(s_e, &s_t) < 0) {
+	  if (f_debug)
+	    fprintf(stderr, "acl_get_tag_type failed: %s\n", strerror(errno));;
 	    return -1;
+	}
 	if (acl_get_tag_type(d_e, &d_t) < 0)
 	    return -1;
 	if (s_t != d_t)
 	    return 2;
 
 	switch (s_t) {
+#ifdef ACL_USER
 	case ACL_USER:
 	    s_q = acl_get_qualifier(s_e);
 	    if (!s_q)
@@ -120,13 +137,15 @@ acl_diff(acl_t src,
 		acl_free(s_q);
 		return -1;
 	    }
-	    s_u = * (uid_t *) s_q;
-	    d_u = * (uid_t *) d_q;
+	    s_ugid = * (uid_t *) s_q;
+	    d_ugid = * (uid_t *) d_q;
 	    acl_free(s_q);
 	    acl_free(d_q);
-	    if (s_u != d_u)
+	    if (s_ugid != d_ugid)
 		return 3;
 	    break;
+#endif
+#ifdef ACL_GROUP
 	case ACL_GROUP:
 	    s_q = acl_get_qualifier(s_e);
 	    if (!s_q)
@@ -136,13 +155,38 @@ acl_diff(acl_t src,
 		acl_free(s_q);
 		return -1;
 	    }
-	    s_g = * (gid_t *) s_q;
-	    d_g = * (gid_t *) d_q;
+	    s_ugid = * (gid_t *) s_q;
+	    d_ugid = * (gid_t *) d_q;
 	    acl_free(s_q);
 	    acl_free(d_q);
-	    if (s_g != d_g)
+	    if (s_ugid != d_ugid)
 		return 4;
 	    break;
+#endif
+#ifdef __DARWIN_ACL_EXTENDED_ALLOW
+	case ACL_EXTENDED_ALLOW:
+	case ACL_EXTENDED_DENY:
+	    /* MacOS */
+	    {
+	    int s_ugtype, d_ugtype;
+
+	    s_q = acl_get_qualifier(s_e);
+	    if (mbr_uuid_to_id((const unsigned char *) s_q, &s_ugid, &s_ugtype) < 0)
+	        return -1;
+	    d_q = acl_get_qualifier(d_e);
+	    if (mbr_uuid_to_id((const unsigned char *) d_q, &d_ugid, &d_ugtype) < 0)
+	        return -1;
+	    acl_free(s_q);
+	    acl_free(d_q);
+	    if (s_ugtype != d_ugtype || s_ugid != d_ugid)
+	        return 3;
+	    }
+	    break;
+#endif
+	default:
+	  if (f_debug)
+	    fprintf(stderr, "acl_get_tag_type: Unhandled type: %d\n", s_t);
+	  return -1;
 	}
 
 	/* Check permset */

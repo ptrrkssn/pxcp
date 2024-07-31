@@ -44,6 +44,10 @@
 #define AT_RESOLVE_BENEATH 0
 #endif
 
+#ifndef O_DIRECT
+#define O_DIRECT 0
+#endif
+
 #ifndef O_PATH
 #ifdef O_SYMLINK
 #define O_PATH (O_RDONLY|O_SYMLINK)
@@ -134,5 +138,14 @@ fsobj_readdir(FSOBJ *dirp,
 extern int
 fsobj_rename(FSOBJ *obp,
 	     char *name);
+
+extern int
+fsobj_chown(FSOBJ *op,
+	    uid_t uid,
+	    gid_t gid);
+
+extern int
+fsobj_utimens(FSOBJ *op,
+	      struct timespec *tv);
 
 #endif
