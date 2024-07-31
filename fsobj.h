@@ -39,6 +39,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
@@ -69,10 +70,14 @@ typedef struct fsobj {
     int flags;
     struct stat stat;
     size_t refcnt;
+#if !defined(HAVE_GETDIRENTRIES) || defined(__DARWIN_64_BIT_INO_T)
+    DIR *dirp;
+#else
     char *dbuf;
     off_t dbufpos;
     size_t dbuflen;
     size_t dbufsize;
+#endif
 } FSOBJ;
 
 
@@ -84,6 +89,12 @@ fsobj_reset(FSOBJ *obp);
 
 extern void
 fsobj_fini(FSOBJ *obp);
+
+extern int
+fsobj_newref(FSOBJ *op,
+	     FSOBJ *parent,
+	     char *name,
+	     mode_t mode);
 
 extern int
 fsobj_refresh(FSOBJ *op);
@@ -158,5 +169,10 @@ fsobj_typestr(FSOBJ *op);
 extern int
 fsobj_stat(FSOBJ *op,
 	   struct stat *sp);
+
+extern ssize_t
+fsobj_readlink(FSOBJ *op,
+	       char *bufp,
+	       size_t bufsize);
 
 #endif

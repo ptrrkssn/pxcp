@@ -60,7 +60,9 @@ distclean: clean
 
 # Check targets
 setup-check-acl:
-	@if [ `uname -s` = "Linux" ]; then setfacl -m root:r t/s/f.txt; else setfacl -m user:root:r::allow t/s/f.txt; fi
+	@if [ `uname -s` = "Linux" ];   then setfacl -m root:r t/s/f.txt; fi
+	@if [ `uname -s` = "FreeBSD" ]; then setfacl -m user:root:r::allow t/s/f.txt; fi
+	@if [ `uname -s` = "Darwin" ];  then chmod +a "root allow read" t/s/f.txt; fi
 
 setup-check-tree:
 	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && echo "Hello, World!" >t/s/d/f2.txt

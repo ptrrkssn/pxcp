@@ -33,8 +33,10 @@
 
 #include "config.h"
 
+#if 0
 #ifdef __linux__
 #define _GNU_SOURCE
+#endif
 #endif
 
 #include <stdio.h>
@@ -125,7 +127,7 @@ struct options {
 
 char *argv0 = "pxcp";
 
-FSOBJ root_srcdir, root_dstdir;
+FSOBJ root_src, root_dst;
 
 unsigned long n_scanned = 0;
 unsigned long n_added = 0;
@@ -174,6 +176,7 @@ ts_isless(struct timespec *a,
 }
 
 
+
 ssize_t
 symlink_clone(FSOBJ *src,
               FSOBJ *dst) {
@@ -181,11 +184,7 @@ symlink_clone(FSOBJ *src,
     ssize_t s_plen, d_plen;
     int rc = 0;
 
-#ifdef HAVE_FREADLINK
-    s_plen = freadlink(src->fd, s_pbuf, sizeof(s_pbuf));
-#else
-    s_plen = readlinkat(src->parent->fd, src->name, s_pbuf, sizeof(s_pbuf));
-#endif
+    s_plen = fsobj_readlink(src, s_pbuf, sizeof(s_pbuf));
     if (s_plen < 0) {
         fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
                 argv0, fsobj_path(src), strerror(errno));
@@ -193,11 +192,7 @@ symlink_clone(FSOBJ *src,
     }
     s_pbuf[s_plen] = '\0';
 
-#ifdef HAVE_FREADLINK
-    d_plen = freadlink(dst->fd, d_pbuf, sizeof(d_pbuf));
-#else
-    d_plen = readlinkat(dst->parent->fd, dst->name, d_pbuf, sizeof(d_pbuf));
-#endif
+    d_plen = fsobj_readlink(dst, d_pbuf, sizeof(d_pbuf));
     if (d_plen < 0) {
 	if (errno != ENOENT) {
 	    fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
@@ -210,8 +205,8 @@ symlink_clone(FSOBJ *src,
 
     if (f_force || d_plen < 0 || strcmp(s_pbuf, d_pbuf) != 0) {
 	if (!f_dryrun) {
-	    if (d_plen >= 0 && unlinkat(dst->parent->fd, dst->name, AT_RESOLVE_BENEATH) < 0) {
-		fprintf(stderr, "%s: Error: %s: Unlink(symlink): %s\n",
+	    if (fsobj_delete(dst) < 0) {
+	        fprintf(stderr, "%s: Error: %s: Delete(symlink): %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
@@ -463,7 +458,7 @@ dir_prune(FSOBJ *dp) {
 	if (f_recurse && S_ISDIR(d_obj.stat.st_mode)) {
 	    /* Recurse down */
 
-	    if (fsobj_equal(&d_obj, &root_srcdir)) {
+	    if (fsobj_equal(&d_obj, &root_src)) {
 		fprintf(stderr, "%s: Error: %s: Infinite recursion\n",
 			argv0, fsobj_path(&d_obj));
 		rc = -1;
@@ -1482,8 +1477,8 @@ main(int argc,
 	}
     }
 
-    fsobj_init(&root_srcdir);
-    fsobj_init(&root_dstdir);
+    fsobj_init(&root_src);
+    fsobj_init(&root_dst);
 
     if (i >= argc) {
 	fprintf(stderr, "%s: Error: Missing required <source> arguments\n",
@@ -1492,7 +1487,7 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_srcdir, NULL, argv[i], O_RDONLY|O_DIRECTORY, 0) <= 0) {
+    if (fsobj_open(&root_src, NULL, argv[i], O_RDONLY, 0) <= 0) {
 	fprintf(stderr, "%s: Error: %s: Open(source): %s\n",
 		argv[0], argv[i], strerror(errno));
         rc = 1;
@@ -1504,11 +1499,11 @@ main(int argc,
             int n;
 
             puts("Source:");
-            n = dir_list(&root_srcdir, 1);
+            n = dir_list(&root_src, 1);
             printf("%d total objects\n", n);
 
-            fsobj_fini(&root_srcdir);
-            fsobj_fini(&root_dstdir);
+            fsobj_fini(&root_src);
+            fsobj_fini(&root_dst);
             exit(0);
         }
 
@@ -1519,8 +1514,8 @@ main(int argc,
     }
 
 
-    if (fsobj_open(&root_dstdir, NULL, argv[i], (f_exist ? 0 : O_CREAT)|O_RDONLY,
-		   (root_srcdir.stat.st_mode&ALLPERMS)|(root_srcdir.stat.st_mode&S_IFMT)) <= 0) {
+    if (fsobj_open(&root_dst, NULL, argv[i], (f_exist ? 0 : O_CREAT)|O_RDONLY,
+		   (root_src.stat.st_mode&ALLPERMS)|(root_src.stat.st_mode&S_IFMT)) <= 0) {
 	fprintf(stderr, "%s: Error: %s: Open(destination): %s\n",
 		argv[0], argv[i], strerror(errno));
         rc = 1;
@@ -1530,7 +1525,7 @@ main(int argc,
 
     clock_gettime(CLOCK_REALTIME, &t0);
 
-    c_rc = clone(&root_srcdir, &root_dstdir);
+    c_rc = clone(&root_src, &root_dst);
     if (c_rc < 0) {
         rc = 1;
 	goto End;
@@ -1604,8 +1599,8 @@ main(int argc,
     }
 
  Fail:
-    fsobj_fini(&root_srcdir);
-    fsobj_fini(&root_dstdir);
+    fsobj_fini(&root_src);
+    fsobj_fini(&root_dst);
 
     exit(rc);
 }

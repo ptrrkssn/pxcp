@@ -31,8 +31,10 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#if 0
 #ifdef __linux__
 #define _GNU_SOURCE
+#endif
 #endif
 
 #include "config.h"
@@ -131,8 +133,8 @@ fsobj_stat(FSOBJ *op,
     /* MacOS supports opening a reference to a Symbolic link */
     if (op->fd >= 0) {
         rc = fstat(op->fd, sp);
-        if (f_debug)
-          fprintf(stderr, "fsobj_stat(%s): fstat(%d) -> %d [t=%s, p=%o] (%s)\n",
+        if (f_debug > 1)
+          fprintf(stderr, "** fsobj_stat(%s): fstat(%d) -> %d [t=%s, p=%o] (%s)\n",
                   fsobj_path(op), op->fd, rc,
                   _mode2str(sp->st_mode),
                   sp->st_mode&ALLPERMS,
@@ -145,8 +147,8 @@ fsobj_stat(FSOBJ *op,
 # ifdef AT_EMPTY_PATH
     if (op->fd >= 0) {
         rc = fstatat(op->fd, "", sp, AT_EMPTY_PATH);
-        if (f_debug)
-          fprintf(stderr, "fsobj_stat(%s): fstatat(%d, \"\") -> %d [t=%s, p=%o] (%s)\n",
+        if (f_debug > 1)
+          fprintf(stderr, "** fsobj_stat(%s): fstatat(%d, \"\") -> %d [t=%s, p=%o] (%s)\n",
                   fsobj_path(op), op->fd, rc,
                   _mode2str(sp->st_mode),
                   sp->st_mode&ALLPERMS,
@@ -156,8 +158,8 @@ fsobj_stat(FSOBJ *op,
 # endif
     if (op->parent->fd >= 0) {
         rc = fstatat(op->parent->fd, op->name, sp, AT_SYMLINK_NOFOLLOW);
-        if (f_debug)
-          fprintf(stderr, "fsobj_stat(%s): fstatat(%d, \"%s\") -> %d [t=%s, p=%o] (%s)\n",
+        if (f_debug > 1)
+          fprintf(stderr, "** fsobj_stat(%s): fstatat(%d, \"%s\") -> %d [t=%s, p=%o] (%s)\n",
                   fsobj_path(op), op->parent->fd, op->name, rc,
                   _mode2str(sp->st_mode),
                   sp->st_mode&ALLPERMS,
@@ -168,8 +170,8 @@ fsobj_stat(FSOBJ *op,
 
     /* Slow but works */
     rc = lstat(fsobj_path(op), sp);
-    if (f_debug)
-      fprintf(stderr, "fsobj_stat(%s): lstat(\"%s\") -> %d [t=%s, p=%o] (%s)\n",
+    if (f_debug > 1)
+      fprintf(stderr, "** fsobj_stat(%s): lstat(\"%s\") -> %d [t=%s, p=%o] (%s)\n",
               fsobj_path(op), fsobj_path(op), rc,
               _mode2str(sp->st_mode),
               sp->st_mode&ALLPERMS,
@@ -188,7 +190,7 @@ fsobj_init(FSOBJ *op) {
     op->magic = FSOBJ_MAGIC;
     op->fd = -1;
 
-    if (f_debug > 2)
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_init(%p)\n", op);
 }
 
@@ -201,13 +203,29 @@ fsobj_reset(FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
 	abort();
 
-    if (f_debug > 2)
-        fprintf(stderr, "** fsobj_reset(%p) path=%s @ %d\n", op, fsobj_path(op), op->fd);
+    if (f_debug > 1)
+      fprintf(stderr, "** fsobj_reset(%p \"%s\"): parent=%p \"%s\" fd=%d refcnt=%lu\n",
+	      op, fsobj_path(op), op->parent, fsobj_path(op->parent), op->fd, op->refcnt);
 
     /* Make sure no references to this object */
     if (op->refcnt > 0)
 	abort();
 
+#if defined(HAVE_GETDIRENTRIES) && !defined(__DARWIN_64_BIT_INO_T)
+    if (op->dbuf) {
+	free(op->dbuf);
+	op->dbuf = NULL;
+	op->dbufpos = 0;
+	op->dbuflen = 0;
+        op->dbufsize = 0;
+    }
+#else
+    if (op->dirp) {
+      closedir(op->dirp);
+      op->dirp = NULL;
+      op->fd = -1;
+    }
+#endif
     if (op->fd >= 0) {
 	close(op->fd);
 	op->fd = -1;
@@ -228,14 +246,7 @@ fsobj_reset(FSOBJ *op) {
 	op->parent = NULL;
     }
 
-    if (op->dbuf) {
-	free(op->dbuf);
-	op->dbuf = NULL;
-	op->dbufpos = 0;
-	op->dbuflen = 0;
-        op->dbufsize = 0;
-    }
-
+    
     op->flags = 0;
     memset(&op->stat, 0, sizeof(op->stat));
 }
@@ -249,7 +260,7 @@ fsobj_fini(FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
 	abort();
 
-    if (f_debug > 2)
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_fini(%p)\n", op);
 
     fsobj_reset(op);
@@ -271,10 +282,38 @@ fsobj_isopen(const FSOBJ *op) {
 
 
 int
+fsobj_newref(FSOBJ *op,
+	     FSOBJ *parent,
+	     char *name,
+	     mode_t mode) {
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+        abort();
+    if (op->fd >= 0)
+        abort();
+    if (op->name)
+      abort();
+
+    if (f_debug > 1)
+      fprintf(stderr, "** fsobj_newref(%p, \"%s\", \"%s\", 0x%x, %4o)\n",
+	      op, fsobj_path(parent), name, O_PATH, mode);
+    op->name = strdup(name);
+    op->flags = O_PATH;
+    op->stat.st_mode = mode;
+    if (op->parent)
+      op->parent->refcnt++;
+
+    return 1;
+}
+
+
+int
 fsobj_mkdir(FSOBJ *op,
             mode_t mode) {
     int rc;
 
+    
     if (!op)
         abort();
     if (op->magic != FSOBJ_MAGIC)
@@ -282,26 +321,21 @@ fsobj_mkdir(FSOBJ *op,
     if (op->fd >= 0)
         abort();
 
-    if (!op->parent) {
-        errno = EBADF;
-        return -1;
-    }
-
-    if (op->parent->fd < 0) {
-        /* Non existing parent, return a non-opened pathref to a directory */
+    if (op->parent && op->parent->fd < 0) {
+        /* Non existing parent, fake it and return a non-opened pathref to a directory */
         op->flags = O_PATH;
         op->stat.st_mode = (S_IFDIR|mode);
         return 1;
     }
 
-    rc = mkdirat(op->parent->fd, op->name, mode);
-    if (f_debug > 2)
+    rc = mkdirat(op->parent ? op->parent->fd : AT_FDCWD, op->name, mode);
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_mkdir: mkdirat(%p, %s) @ %d -> %d (%s)\n",
                 op, fsobj_path(op), op->fd, rc, strerror(errno));
     if (rc < 0 && errno != EEXIST)
         return -1;
 
-    op->fd = openat(op->parent->fd, op->name, O_RDONLY|O_NOFOLLOW|O_DIRECTORY);
+    op->fd = openat(op->parent ? op->parent->fd : AT_FDCWD, op->name, O_RDONLY|O_NOFOLLOW|O_DIRECTORY);
     if (op->fd < 0)
         return -1;
 
@@ -345,7 +379,7 @@ fsobj_open(FSOBJ *op,
 	   int flags,
 	   mode_t mode) {
     struct stat sb;
-    int fd, pfd;
+    int fd, pfd, rc;
     int faked = 0;
 
 
@@ -354,32 +388,37 @@ fsobj_open(FSOBJ *op,
     if (op->magic != FSOBJ_MAGIC)
         abort();
 
-    if (f_debug > 2)
-        fprintf(stderr, "** fsobj_open(%p)\n", op);
+    if (f_debug > 1)
+        fprintf(stderr, "** fsobj_open(%p \"%s\", %p \"%s\", %s%s%s, 0x%x, 0%o)\n",
+		op, fsobj_path(op),
+		parent, fsobj_path(parent),
+		name ? "\"" : "", 
+		name ? name : "", 
+		name ? "\"" : "",
+		flags, mode);
 
     if ((flags & (O_ACCMODE|O_PATH)) == O_PATH) {
         /* Open a path reference, and possibly open the object file descriptor */
 
         pfd = (parent ? (parent->fd >= 0 ? parent->fd : -1) : AT_FDCWD);
-        if (pfd != -1)
-            /* Valid parent */
-            fd = openat(pfd, name, flags|O_NOFOLLOW|(parent ? AT_RESOLVE_BENEATH : 0));
-        else {
+        if (pfd != -1) {
+	  fd = openat(pfd, name, flags|O_NOFOLLOW|(parent ? AT_RESOLVE_BENEATH : 0));
+	  if (f_debug)
+	    fprintf(stderr, "** fsobj_open(%p): openat(%d, \"%s\", 0x%x) [O_PATH]\n",
+		    op, pfd, name, flags|O_NOFOLLOW|(parent ? AT_RESOLVE_BENEATH : 0));
+        } else {
             /* Parent does not exist - Generate a non-opened fsobj reference */
+	  if (f_debug)
+	    fprintf(stderr, "** fsobj_open(%p): faking [O_PATH]\n", op);
             errno = ENOENT;
             fd = -1;
         }
 
-        if (f_debug > 2)
-            fprintf(stderr, "** fsobj_open(%s%s%s) -> %d/%d (%s) [O_PATH]\n",
-                    parent ? parent->name : "",
-                    parent ? "/" : "",
-                    name,
-                    pfd, fd,
-                    fd < 0 ? strerror(errno) : "");
-
         if (fd < 0 && errno == ENOENT && (mode&S_IFMT) != 0) {
             /* Object does not exist, generate a non-opened path reference object */
+	    fprintf(stderr, "** fsobj_open(%p): faking [Non-specified]\n", op);
+	    
+            errno = ENOENT;
             memset(&sb, 0, sizeof(sb));
             sb.st_mode = mode;
             faked = 1;
@@ -393,7 +432,7 @@ fsobj_open(FSOBJ *op,
             if ((mode & S_IFMT) == S_IFDIR) {
                 /* Create a new directory, ok if it already exists */
                 if (mkdirat(pfd, name, mode&ALLPERMS) < 0 && errno != EEXIST) {
-                    if (f_debug > 2)
+                    if (f_debug > 1)
                         fprintf(stderr, "** fsobj_open: mkdirat(%s%s%s) @ %d -> %s\n",
                                 parent ? parent->name : "",
                                 parent ? "/" : "",
@@ -403,7 +442,7 @@ fsobj_open(FSOBJ *op,
 
                 flags &= ~O_CREAT;
                 fd = openat(pfd, name, flags|O_NOFOLLOW, mode&ALLPERMS);
-                if (f_debug > 2)
+                if (f_debug > 1)
                     fprintf(stderr, "** fsobj_open(%s%s%s) @ %d/%d -> (%s) [S_IFDIR & O_CREAT]\n",
                             parent ? parent->name : "",
                             parent ? "/" : "",
@@ -411,7 +450,7 @@ fsobj_open(FSOBJ *op,
                             fd < 0 ? strerror(errno) : "");
             } else {
                 fd = openat(pfd, name, flags|O_NOFOLLOW, mode&ALLPERMS);
-                if (f_debug > 2)
+                if (f_debug > 1)
                     fprintf(stderr, "** fsobj_open(%s%s%s) @ %d/%d -> (%s) [S_IFREG & O_CREAT]\n",
                             parent ? parent->name : "",
                             parent ? "/" : "",
@@ -420,7 +459,7 @@ fsobj_open(FSOBJ *op,
 
         } else {
             fd = openat(pfd, name, flags|O_NOFOLLOW);
-            if (f_debug > 2)
+            if (f_debug > 1)
                 fprintf(stderr, "** fsobj_open(%s%s%s) @ %d/%d -> (%s) [!O_CREAT]\n",
                         parent ? parent->name : "",
                         parent ? "/" : "",
@@ -444,10 +483,10 @@ fsobj_open(FSOBJ *op,
     op->name = strdup(name);
     op->fd = fd;
 
-    if (!faked && fsobj_stat(op, NULL) < 0) {
-        if (f_debug)
-          fprintf(stderr, "fsobj_stat(%s): %s\n",
-                  fsobj_path(op), strerror(errno));
+    if (!faked && (rc = fsobj_stat(op, NULL)) < 0) {
+        if (f_debug > 1)
+          fprintf(stderr, "** fsobj_open(%s): fsobj_stat -> %d (%s)\n",
+                  fsobj_path(op), rc, strerror(errno));
         return -1;
     }
     
@@ -503,6 +542,9 @@ fsobj_path(FSOBJ *op) {
     int rc;
 
 
+    if (!op)
+      return ".";
+    
     rc = fsobj_isopen(op);
     if (rc < 0)
 	return NULL;
@@ -597,7 +639,7 @@ fsobj_reopen(FSOBJ *op,
     if (op->magic != FSOBJ_MAGIC)
 	abort();
 
-    if (f_debug)
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_reopen(\"%s\", 0x%x)\n",
                 fsobj_path(op), flags);
     
@@ -608,7 +650,7 @@ fsobj_reopen(FSOBJ *op,
 #endif
     if (op->parent && op->parent->fd != -1) {
         nfd = openat(op->parent->fd, op->name, (flags&~O_CREAT));
-        if (f_debug)
+        if (f_debug > 1)
             fprintf(stderr, "** fsobj_reopen(%s): openat(%d, \"%s\", 0x%x) -> %d (%s)\n",
                     fsobj_path(op),
                     op->parent->fd, op->name, (flags&~O_CREAT),
@@ -645,7 +687,7 @@ fsobj_close(FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
         abort();
 
-    if (f_debug > 2)
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_close(%s) @ %d\n", fsobj_path(op), op->fd);
 
     if (op->fd >= 0) {
@@ -674,7 +716,7 @@ fsobj_delete(FSOBJ *op) {
        
        rc = funlinkat(pfd, op->name, op->fd,
                       AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0));
-       if (f_debug)
+       if (f_debug > 1)
            fprintf(stderr, "** fsobj_delete(\"%s\"): funlinkat(%d, \"%s\", %d, 0x%x) -> %d (%s)\n",
                    fsobj_path(op), pfd, op->name, op->fd,
 		   AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0),
@@ -685,7 +727,7 @@ fsobj_delete(FSOBJ *op) {
 
     if (S_ISDIR(op->stat.st_mode)) {
         rc = rmdir(fsobj_path(op));
-	if (f_debug)
+	if (f_debug > 1)
 	    fprintf(stderr, "** fsobj_delete(\"%s\"): rmdir(\"%s\") -> %d (%s)\n",
 		    fsobj_path(op), fsobj_path(op),
 		    rc, rc < 0 ? strerror(errno) : "");
@@ -693,7 +735,7 @@ fsobj_delete(FSOBJ *op) {
     }
 
     rc = unlink(fsobj_path(op));
-    if (f_debug)
+    if (f_debug > 1)
 	fprintf(stderr, "** fsobj_delete(\"%s\"): rmdir(\"%s\") -> %d (%s)\n",
 		fsobj_path(op), fsobj_path(op),
 		rc, rc < 0 ? strerror(errno) : "");
@@ -723,7 +765,9 @@ fsobj_rewind(FSOBJ *op) {
 int
 fsobj_readdir(FSOBJ *dp, FSOBJ *op) {
     ssize_t rc;
+#if defined(HAVE_GETDIRENTRIES) && !defined(__DARWIN_64_BIT_INO_T)
     size_t bufsize = DIRBUFSIZE;
+#endif
     struct dirent *dep;
 
 
@@ -737,6 +781,33 @@ fsobj_readdir(FSOBJ *dp, FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
         abort();
 
+#if !defined(HAVE_GETDIRENTRIES) || defined(__DARWIN_64_BIT_INO_T)
+    if (!dp->dirp) {
+      if (dp->fd >= 0) {
+	dp->dirp = fdopendir(dp->fd);
+	if (f_debug > 1)
+	  fprintf(stderr, "** fsobj_readdir(\"%s\"): fdopendir(%d) -> %p (%s)\n",
+		  fsobj_path(dp), dp->fd, dp->dirp, !dp->dirp ? strerror(errno) : "");
+      } else {
+	dp->dirp = opendir(fsobj_path(dp));
+	if (f_debug > 1)
+	  fprintf(stderr, "** fsobj_readdir(\"%s\"): opendir(\"%s\") -> %p (%s)\n",
+		  fsobj_path(dp), fsobj_path(dp), dp->dirp, !dp->dirp ? strerror(errno) : "");
+      }
+
+      if (!dp->dirp)
+	return -1;
+    }
+    
+ Again:
+    dep = readdir(dp->dirp);
+    if (!dep) {
+      if (f_debug > 1)
+	fprintf(stderr, "** fsobj_readdir(\"%s\") -> NULL (%s)\n",
+		fsobj_path(dp), strerror(errno));
+      return 0;
+    }
+#else
     /* Probably won't happen, but you never know */
     if (dp->stat.st_blksize > bufsize)
 	bufsize = dp->stat.st_blksize;
@@ -774,17 +845,14 @@ fsobj_readdir(FSOBJ *dp, FSOBJ *op) {
 
     dep = (struct dirent *) (dp->dbuf+dp->dbufpos);
     dp->dbufpos += dep->d_reclen;
+#endif
 
-    if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' || (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
-	goto Again;
+    if (dep->d_name[0] == '.' && (dep->d_name[1] == '\0' ||
+				  (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
+        goto Again;
 
     fsobj_reset(op);
-    rc = fsobj_open(op, dp, dep->d_name, O_PATH, 0);
-    if (rc == 0) {
-        /* Object disappeared while trying to open it, skip it */
-        goto Again;
-    }
-
+    rc = fsobj_newref(op, dp, dep->d_name, 0);
     return rc > 0 ? 1 : -1;
 }
 
@@ -873,8 +941,8 @@ fsobj_chmod(FSOBJ *op,
 #ifdef O_SYMLINK
     if (op->fd >= 0) {
         rc = fchmod(op->fd, mode);
-        if (f_debug)
-            fprintf(stderr, "fsobj_chmod(%s): fchmod(%d, 0%o -> 0%o) -> %d (%d, %s)\n",
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_chmod(%s): fchmod(%d, 0%o -> 0%o) -> %d (%d, %s)\n",
                     fsobj_path(op), op->fd, (op->stat.st_mode&ALLPERMS), mode, rc,
                     errno,
                     rc < 0 ? strerror(errno) : "");
@@ -886,8 +954,8 @@ fsobj_chmod(FSOBJ *op,
 # if defined(AT_EMPTY_PATH) && !defined(__linux__)
     if (op->fd >= 0) {
         rc = fchmodat(op->fd, "", mode, AT_EMPTY_PATH);
-        if (f_debug)
-            fprintf(stderr, "fsobj_chmod(%s): fchmodat(%d, \"\", 0%o -> 0%o) -> %d (%d, %s)\n",
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_chmod(%s): fchmodat(%d, \"\", 0%o -> 0%o) -> %d (%d, %s)\n",
                     fsobj_path(op), op->fd, (op->stat.st_mode&ALLPERMS), mode, rc,
                     errno,
                     rc < 0 ? strerror(errno) : "");
@@ -899,8 +967,8 @@ fsobj_chmod(FSOBJ *op,
         int pfd = (op->parent ? op->parent->fd : AT_FDCWD);
           
         rc = fchmodat(pfd, op->name, mode, AT_SYMLINK_NOFOLLOW);
-        if (f_debug)
-            fprintf(stderr, "fsobj_chmod(%s): fchmodat(%d, \"%s\", 0%o -> 0%o) -> %d (%d, %s)\n",
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_chmod(%s): fchmodat(%d, \"%s\", 0%o -> 0%o) -> %d (%d, %s)\n",
                     fsobj_path(op), op->parent->fd, op->name,
                     (op->stat.st_mode&ALLPERMS), mode, rc,
                     errno,
@@ -911,8 +979,8 @@ fsobj_chmod(FSOBJ *op,
 #endif
 
     rc = lchmod(fsobj_path(op), mode);
-    if (f_debug)
-        fprintf(stderr, "fsobj_chmod(%s): lchmod(0%o -> 0%o) -> %d (%d, %s)\n",
+    if (f_debug > 1)
+        fprintf(stderr, "** fsobj_chmod(%s): lchmod(0%o -> 0%o) -> %d (%d, %s)\n",
                 fsobj_path(op), (op->stat.st_mode&ALLPERMS), mode, rc,
                 errno, rc < 0 ? strerror(errno) : "");
     return rc;
@@ -969,4 +1037,47 @@ fsobj_rename(FSOBJ *op,
         
     }
     return rc;
+}
+
+ssize_t
+fsobj_readlink(FSOBJ *op,
+	       char *bufp,
+	       size_t bufsize) {
+  ssize_t rc;
+  
+
+#ifdef HAVE_FREADLINK
+  if (op->fd >= 0) {
+    rc = freadlink(op->fd, bufp, bufsize);
+    if (f_debug)
+      fprintf(stderr, "** fsobj_readlink(\"%s\") -> %lld (%s)\n",
+	      fsobj_path(op), (long long int) rc, rc < 0 ? strerror(errno) : "");
+    return rc;
+  }
+#endif
+#ifdef HAVE_READLINKAT
+  if (!op->parent || op->parent->fd >= 0)
+    return readlinkat(op->parent ? op->parent->fd : AT_FDCWD, op->name, bufp, bufsize);
+#endif
+  
+  return readlink(fsobj_path(op), bufp, bufsize);
+}
+
+
+int
+fsobj_symlink(FSOBJ *op,
+	      char *name) {
+  int rc;
+  
+#ifdef HAVE_SYMLINKAT
+  if (!op->parent || op->parent->fd >= 0) {
+    rc = symlinkat(name, op->parent->fd, op->name);
+    if (f_debug)
+      fprintf(stderr, "** fsobj_symlink(\"%s\"): symlinkat(\"%s\", %d, \"%s\") -> %d (%s)\n",
+	      fsobj_path(op), name, op->parent->fd, op->name, rc, rc < 0 ? strerror(errno) : "");
+    return rc;
+  }
+#endif
+  
+  return symlink(name, fsobj_path(op));
 }
