@@ -57,10 +57,11 @@ extern int f_debug;
 #endif
 
 
+#if 0
 #if !HAVE_FUNLINKAT
 #define funlinkat(dirfd,name,fd,flags) unlinkat(dirfd,name,flags)
 #endif
-
+#endif
 
 static char *
 _mode2str(mode_t m) {
@@ -674,17 +675,30 @@ fsobj_delete(FSOBJ *op) {
        rc = funlinkat(pfd, op->name, op->fd,
                       AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0));
        if (f_debug)
-           fprintf(stderr, "** fsobj_delete(\"%s\"): funlinkat(%d, \"%s\", %d) -> %d (%s)\n",
-                   fsobj_path(op), pfd, op->name, op->fd, rc, rc < 0 ? strerror(errno) : "");
-       if (rc < 0)
-           return -1;
+           fprintf(stderr, "** fsobj_delete(\"%s\"): funlinkat(%d, \"%s\", %d, 0x%x) -> %d (%s)\n",
+                   fsobj_path(op), pfd, op->name, op->fd,
+		   AT_RESOLVE_BENEATH|(S_ISDIR(op->stat.st_mode) ? AT_REMOVEDIR : 0),
+		   rc, rc < 0 ? strerror(errno) : "");
+       goto End;
     }
 #endif
 
-    if (S_ISDIR(op->stat.st_mode))
+    if (S_ISDIR(op->stat.st_mode)) {
         rc = rmdir(fsobj_path(op));
-    else
-        rc = unlink(fsobj_path(op));
+	if (f_debug)
+	    fprintf(stderr, "** fsobj_delete(\"%s\"): rmdir(\"%s\") -> %d (%s)\n",
+		    fsobj_path(op), fsobj_path(op),
+		    rc, rc < 0 ? strerror(errno) : "");
+	goto End;
+    }
+
+    rc = unlink(fsobj_path(op));
+    if (f_debug)
+	fprintf(stderr, "** fsobj_delete(\"%s\"): rmdir(\"%s\") -> %d (%s)\n",
+		fsobj_path(op), fsobj_path(op),
+		rc, rc < 0 ? strerror(errno) : "");
+
+ End:
     if (rc < 0)
         return -1;
     
