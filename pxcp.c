@@ -33,12 +33,6 @@
 
 #include "config.h"
 
-#if 0
-#ifdef __linux__
-#define _GNU_SOURCE
-#endif
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -184,7 +178,7 @@ symlink_clone(FSOBJ *src,
     ssize_t s_plen, d_plen;
     int rc = 0;
 
-    s_plen = fsobj_readlink(src, s_pbuf, sizeof(s_pbuf));
+    s_plen = fsobj_readlink(src, NULL, s_pbuf, sizeof(s_pbuf));
     if (s_plen < 0) {
         fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
                 argv0, fsobj_path(src), strerror(errno));
@@ -192,7 +186,7 @@ symlink_clone(FSOBJ *src,
     }
     s_pbuf[s_plen] = '\0';
 
-    d_plen = fsobj_readlink(dst, d_pbuf, sizeof(d_pbuf));
+    d_plen = fsobj_readlink(dst, NULL, d_pbuf, sizeof(d_pbuf));
     if (d_plen < 0) {
 	if (errno != ENOENT) {
 	    fprintf(stderr, "%s: Error: %s: Read(symlink): %s\n",
@@ -205,13 +199,13 @@ symlink_clone(FSOBJ *src,
 
     if (f_force || d_plen < 0 || strcmp(s_pbuf, d_pbuf) != 0) {
 	if (!f_dryrun) {
-	    if (fsobj_delete(dst) < 0) {
+	    if (fsobj_delete(dst, NULL) < 0) {
 	        fprintf(stderr, "%s: Error: %s: Delete(symlink): %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
 
-	    if (symlinkat(s_pbuf, dst->parent->fd, dst->name) < 0) {
+	    if (fsobj_symlink(dst, NULL, s_pbuf) < 0) {
 		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
 			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
 		return -1;
@@ -220,7 +214,7 @@ symlink_clone(FSOBJ *src,
 	rc = 1;
     }
 
-    if (fsobj_stat(dst, NULL) < 0) {
+    if (fsobj_stat(dst, NULL, NULL) < 0) {
         fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
                 argv0, fsobj_path(dst), strerror(errno));
         return -1;
@@ -476,7 +470,7 @@ dir_prune(FSOBJ *dp) {
 	}
 
         if (!f_dryrun) {
-            if (fsobj_delete(&d_obj) < 0) {
+            if (fsobj_delete(&d_obj, NULL) < 0) {
                 fprintf(stderr, "%s: Error: %s: Delete: %s\n",
                         argv0, fsobj_path(&d_obj), strerror(errno));
 
@@ -517,7 +511,7 @@ owner_clone(FSOBJ *src,
                         argv0, fsobj_path(dst));
         } else {
             if (!f_dryrun) {
-	        int f_rc = fsobj_chown(dst, src->stat.st_uid, -1);
+	        int f_rc = fsobj_chown(dst, NULL, src->stat.st_uid, -1);
 		if (f_rc < 0) {
                     fprintf(stderr, "%s: Error: %s: Change Owner (uid=%d): %s\n",
                             argv0,
@@ -549,7 +543,7 @@ group_clone(FSOBJ *src,
                         argv0, fsobj_path(dst));
         } else {
             if (!f_dryrun) {
-	        int f_rc = fsobj_chown(dst, src->stat.st_uid, -1);
+	        int f_rc = fsobj_chown(dst, NULL, src->stat.st_uid, -1);
 		if (f_rc < 0) {
 		  fprintf(stderr, "%s: Error: %s: Change Group (gid=%d): %s\n",
                             argv0,
@@ -575,7 +569,7 @@ mode_clone(FSOBJ *src,
         return 0;
     
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
-        if (fsobj_chmod(dst, (src->stat.st_mode&ALLPERMS)) < 0) {
+        if (fsobj_chmod(dst, NULL, (src->stat.st_mode&ALLPERMS)) < 0) {
             if (errno == EOPNOTSUPP && S_ISLNK(dst->stat.st_mode))
                 /* Linux doesn't support changing permissions on symbolic links */
                 return 0;
@@ -1060,7 +1054,7 @@ times_clone(FSOBJ *src,
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_birthtim;
 
-	    if (fsobj_utimens(dst, times) < 0) {
+	    if (fsobj_utimens(dst, NULL, times) < 0) {
 		fprintf(stderr, "%s: Error: %s: Reset Birth Time: %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
@@ -1077,7 +1071,7 @@ times_clone(FSOBJ *src,
 	    times[0].tv_nsec = UTIME_OMIT;
 	    times[1] = src->stat.st_mtim;
 
-	    if (fsobj_utimens(dst, times) < 0) {
+	    if (fsobj_utimens(dst, NULL, times) < 0) {
 		fprintf(stderr, "%s: Error: %s: Reset Modification Time: %s\n",
 			argv0, fsobj_path(dst), strerror(errno));
 		rc = -1;
@@ -1138,7 +1132,7 @@ clone(FSOBJ *src,
         if (d_type == S_IFDIR)
             dir_prune(dst);
 
-        if (fsobj_delete(dst) < 0) {
+        if (fsobj_delete(dst, NULL) < 0) {
             fprintf(stderr, "%s: Error: %s: Delete: %s\n",
                     argv0, fsobj_path(dst), strerror(errno));
             return -1;
@@ -1169,7 +1163,7 @@ clone(FSOBJ *src,
         case S_IFDIR:
             if (f_debug)
                 fprintf(stderr, "*** clone: Creating & Opening destination directory for reading\n");
-            if (fsobj_mkdir(dst, src->stat.st_mode) < 0) {
+            if (fsobj_mkdir(&d_obj, NULL, src->stat.st_mode) < 0) {
                 fprintf(stderr, "%s: Error: %s: Create(directory): %s\n",
                         argv0, fsobj_path(dst), strerror(errno));
                 return -1;
@@ -1179,9 +1173,10 @@ clone(FSOBJ *src,
         case S_IFREG:
             if (f_debug)
                 fprintf(stderr, "*** clone: Creating & Opening destination file for reading\n");
-            if (fsobj_open(dst, dst->parent, src->name, O_CREAT|O_WRONLY, src->stat.st_mode) < 0) {
-                fprintf(stderr, "%s: Error: %s/%s: Create(file): %s\n",
-                        argv0, fsobj_path(dst->parent), src->name, strerror(errno));
+            
+            if (fsobj_open(dst, O_CREAT|O_WRONLY, src->stat.st_mode) < 0) {
+                fprintf(stderr, "%s: Error: %s: Create(file): %s\n",
+                        argv0, fsobj_path(dst), strerror(errno));
                 return -1;
             }
             break;
@@ -1222,7 +1217,10 @@ clone(FSOBJ *src,
 
             fsobj_rewind(dst);
             while ((d_rc = fsobj_readdir(dst, &d_obj)) > 0) {
-                int s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
+                int s_rc;
+
+                s_rc = fsobj_newref(&s_obj, src, d_obj.name);
+                s_rc = fsobj_open(&s_obj, O_PATH, 0);
 
                 if (f_debug)
                     fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
@@ -1239,7 +1237,7 @@ clone(FSOBJ *src,
                         }
                     }
 
-                    if (fsobj_delete(&d_obj) < 0) {
+                    if (fsobj_delete(&d_obj, NULL) < 0) {
                         fprintf(stderr, "%s: Error: %s: Delete: %s\n",
                                 argv0, fsobj_path(dst), strerror(errno));
                         return -1;
@@ -1258,7 +1256,10 @@ clone(FSOBJ *src,
 
         fsobj_rewind(src);
         while ((s_rc = fsobj_readdir(src, &s_obj)) > 0) {
-            int d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
+            int d_rc;
+
+            d_rc = fsobj_newref(&d_obj, dst, s_obj.name);
+            d_rc = fsobj_open(&d_obj, O_PATH, s_obj.stat.st_mode);
 
             if (f_debug)
                 fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
@@ -1487,7 +1488,9 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_src, NULL, argv[i], O_RDONLY, 0) <= 0) {
+    fsobj_newref(&root_src, NULL, argv[i]);
+    
+    if (fsobj_open(&root_src, O_RDONLY, 0) <= 0) {
 	fprintf(stderr, "%s: Error: %s: Open(source): %s\n",
 		argv[0], argv[i], strerror(errno));
         rc = 1;
@@ -1513,8 +1516,9 @@ main(int argc,
         goto Fail;
     }
 
+    fsobj_newref(&root_dst, NULL, argv[i]);
 
-    if (fsobj_open(&root_dst, NULL, argv[i], (f_exist ? 0 : O_CREAT)|O_RDONLY,
+    if (fsobj_open(&root_dst, (f_exist ? 0 : O_CREAT)|O_RDONLY,
 		   (root_src.stat.st_mode&ALLPERMS)|(root_src.stat.st_mode&S_IFMT)) <= 0) {
 	fprintf(stderr, "%s: Error: %s: Open(destination): %s\n",
 		argv[0], argv[i], strerror(errno));

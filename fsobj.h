@@ -93,8 +93,7 @@ fsobj_fini(FSOBJ *obp);
 extern int
 fsobj_newref(FSOBJ *op,
 	     FSOBJ *parent,
-	     char *name,
-	     mode_t mode);
+	     char *name);
 
 extern int
 fsobj_refresh(FSOBJ *op);
@@ -106,9 +105,9 @@ extern int
 fsobj_typeof(const FSOBJ *objp);
 
 extern int
-fsobj_open(FSOBJ *obp,
-	   FSOBJ *parent,
-	   const char *name,
+fsobj_open(FSOBJ *op,
+           FSOBJ *dp,
+           const char *name,
 	   int flags,
 	   mode_t mode);
 
@@ -117,9 +116,6 @@ fsobj_fake(FSOBJ *dst,
 	   FSOBJ *dstdir,
 	   const FSOBJ *src);
 
-extern int
-fsobj_mkdir(FSOBJ *op,
-            mode_t mode);
 
 
 extern void
@@ -139,40 +135,60 @@ fsobj_reopen(FSOBJ *obp,
 extern int
 fsobj_rewind(FSOBJ *obp);
 
-extern int
-fsobj_delete(FSOBJ *obp);
+extern char *
+fsobj_typestr(FSOBJ *op);
+
 
 extern int
 fsobj_readdir(FSOBJ *dirp,
 	      FSOBJ *objp);
 
+
 extern int
-fsobj_rename(FSOBJ *obp,
-	     char *name);
+fsobj_delete(FSOBJ *op,
+             const char *np);
+
+extern int
+fsobj_rename(FSOBJ *op,
+             const char *np,
+	     char *newname);
 
 extern int
 fsobj_chown(FSOBJ *op,
+            const char *np,
 	    uid_t uid,
 	    gid_t gid);
 
 extern int
 fsobj_utimens(FSOBJ *op,
+              const char *np,
 	      struct timespec *tv);
 
 extern int
 fsobj_chmod(FSOBJ *op,
+            const char *np,
             mode_t mode);
-
-extern char *
-fsobj_typestr(FSOBJ *op);
 
 extern int
 fsobj_stat(FSOBJ *op,
+           const char *name,
 	   struct stat *sp);
 
 extern ssize_t
 fsobj_readlink(FSOBJ *op,
+               const char *name,
 	       char *bufp,
 	       size_t bufsize);
+
+extern int
+fsobj_symlink(FSOBJ *op,
+              const char *name,
+              const char *target);
+
+extern int
+fsobj_mkdir(FSOBJ *op,
+            const char *name,
+            mode_t mode);
+
 
 #endif

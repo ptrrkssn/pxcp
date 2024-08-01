@@ -36,6 +36,9 @@
 /* Define to 1 if you have the 'acl_set_link_np' function. */
 #undef HAVE_ACL_SET_LINK_NP
 
+/* Define to 1 if you have the 'chflagsat' function. */
+#undef HAVE_CHFLAGSAT
+
 /* Define to 1 if you have the 'extattr_get_fd' function. */
 #undef HAVE_EXTATTR_GET_FD
 
@@ -63,12 +66,18 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the 'lchflags' function. */
+#undef HAVE_LCHFLAGS
+
 /* Define to 1 if your system has a GNU libc compatible 'malloc' function, and
    to 0 otherwise. */
 #undef HAVE_MALLOC
 
 /* Define to 1 if you have the <minix/config.h> header file. */
 #undef HAVE_MINIX_CONFIG_H
+
+/* Define to 1 if you have the 'mkdirat' function. */
+#undef HAVE_MKDIRAT
 
 /* Define to 1 if you have the 'mkostemp' function. */
 #undef HAVE_MKOSTEMP
