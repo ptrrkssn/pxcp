@@ -1,6 +1,7 @@
 AC_PREREQ([2.71])
 AC_INIT([PXCP],[0.1.0],[pen@lysator.liu.se],[pxcp],[https://github.com/ptrrkssn/pxcp])
 
+dnl AC_LANG(C)
 AC_CONFIG_SRCDIR([pxcp.c])
 AC_CONFIG_HEADERS([config.h])
 
@@ -38,8 +39,21 @@ AC_CHECK_FUNCS([utimensat futimens])
 AC_CHECK_FUNCS([fstatat fchownat openat renameat mkdirat fchmodat])
 AC_CHECK_FUNCS([funlinkat unlinkat])
 AC_CHECK_FUNCS([readlinkat freadlink symlinkat])
-AC_CHECK_FUNCS([getdirentries])
+dnl AC_CHECK_FUNCS([getdirentries])
 AC_CHECK_FUNCS([mkostempsat mkostemps mkostemp mkstemp])
 AC_CHECK_FUNCS([chflagsat lchflags])
+
+AC_MSG_CHECKING([for working getdirentries...])
+AC_LINK_IFELSE([AC_LANG_PROGRAM(
+[[#include <dirent.h>
+#include <sys/types.h>
+#include <sys/dirent.h>
+char buf[65536];]],[[getdirentries(0, buf, sizeof(buf), 0);]]
+)],
+[AC_MSG_RESULT([yes])
+AC_DEFINE([HAVE_GETDIRENTRIES], [1], [Define if getdirentries exists and is linkable.])],
+[AC_MSG_RESULT([no])])
+
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

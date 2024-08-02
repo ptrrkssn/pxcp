@@ -5201,13 +5201,6 @@ then :
 
 fi
 
-ac_fn_c_check_func "$LINENO" "getdirentries" "ac_cv_func_getdirentries"
-if test "x$ac_cv_func_getdirentries" = xyes
-then :
-  printf "%s\n" "#define HAVE_GETDIRENTRIES 1" >>confdefs.h
-
-fi
-
 ac_fn_c_check_func "$LINENO" "mkostempsat" "ac_cv_func_mkostempsat"
 if test "x$ac_cv_func_mkostempsat" = xyes
 then :
@@ -5245,6 +5238,40 @@ then :
   printf "%s\n" "#define HAVE_LCHFLAGS 1" >>confdefs.h
 
 fi
+
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for working getdirentries..." >&5
+printf %s "checking for working getdirentries...... " >&6; }
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/dirent.h>
+char buf[65536];
+int
+main (void)
+{
+getdirentries(0, buf, sizeof(buf), 0);
+
+  ;
+  return 0;
+}
+_ACEOF
+if ac_fn_c_try_link "$LINENO"
+then :
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: yes" >&5
+printf "%s\n" "yes" >&6; }
+
+printf "%s\n" "#define HAVE_GETDIRENTRIES 1" >>confdefs.h
+
+else case e in #(
+  e) { printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: no" >&5
+printf "%s\n" "no" >&6; } ;;
+esac
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext conftest.$ac_ext
+
 
 ac_config_files="$ac_config_files Makefile"
 
