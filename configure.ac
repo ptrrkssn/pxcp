@@ -15,7 +15,7 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
 # Checks for header files.
-AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h])
+AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h sys/dirent.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
@@ -46,8 +46,6 @@ AC_CHECK_FUNCS([chflagsat lchflags])
 AC_MSG_CHECKING([for working getdirentries...])
 AC_LINK_IFELSE([AC_LANG_PROGRAM(
 [[#include <dirent.h>
-#include <sys/types.h>
-#include <sys/dirent.h>
 char buf[65536];]],[[getdirentries(0, buf, sizeof(buf), 0);]]
 )],
 [AC_MSG_RESULT([yes])

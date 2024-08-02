@@ -60,7 +60,7 @@
 /* Define to 1 if you have the 'futimens' function. */
 #undef HAVE_FUTIMENS
 
-/* Define to 1 if you have the 'getdirentries' function. */
+/* Define if getdirentries exists and is linkable. */
 #undef HAVE_GETDIRENTRIES
 
 /* Define to 1 if you have the <inttypes.h> header file. */

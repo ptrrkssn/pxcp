@@ -4703,6 +4703,12 @@ then :
   printf "%s\n" "#define HAVE_SYS_EXTATTR_H 1" >>confdefs.h
 
 fi
+ac_fn_c_check_header_compile "$LINENO" "sys/dirent.h" "ac_cv_header_sys_dirent_h" "$ac_includes_default"
+if test "x$ac_cv_header_sys_dirent_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SYS_DIRENT_H 1" >>confdefs.h
+
+fi
 
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -5245,8 +5251,6 @@ printf %s "checking for working getdirentries...... " >&6; }
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 #include <dirent.h>
-#include <sys/types.h>
-#include <sys/dirent.h>
 char buf[65536];
 int
 main (void)
