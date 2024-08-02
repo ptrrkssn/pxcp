@@ -34,13 +34,14 @@ VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --sh
 
 PROGRAMS =	        pxcp
 
-PXCP_OBJS =             pxcp.o fsobj.o acls.o
+PXCP_OBJS =             pxcp.o fsobj.o acls.o misc.o
 
 all: $(PROGRAMS)
 
+misc.o:  misc.c misc.h config.h
 acls.o:  acls.c acls.h config.h
-fsobj.o: fsobj.c fsobj.h config.h
-pxcp.o:  pxcp.c acls.h config.h
+fsobj.o: fsobj.c fsobj.h config.h acls.h misc.h
+pxcp.o:  pxcp.c acls.h config.h misc.h
 
 pxcp: $(PXCP_OBJS)
 	$(CC) $(LDFLAGS) -o pxcp $(PXCP_OBJS) $(LIBS)

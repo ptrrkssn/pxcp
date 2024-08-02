@@ -51,11 +51,12 @@
 
 #ifndef O_PATH
 #ifdef O_SYMLINK
-#define O_PATH (O_RDONLY|O_SYMLINK)
-#else
-#define O_PATH (O_RDONLY)
+/* MacOS doesn't have O_PATH, but we emulate it with O_SYMLINK */
+#define O_PATH O_SYMLINK
 #endif
 #endif
+
+#define FSOBJ_FD(op) (op ? op->fd : AT_FDCWD)
 
 
 #define FSOBJ_MAGIC 0x5729043
@@ -70,13 +71,13 @@ typedef struct fsobj {
     int flags;
     struct stat stat;
     size_t refcnt;
-#if !defined(HAVE_GETDIRENTRIES) || defined(__DARWIN_64_BIT_INO_T)
-    DIR *dirp;
-#else
+#ifdef HAVE_GETDIRENTRIES
     char *dbuf;
     off_t dbufpos;
     size_t dbuflen;
     size_t dbufsize;
+#else
+    DIR *dirp;
 #endif
 } FSOBJ;
 
@@ -91,18 +92,16 @@ extern void
 fsobj_fini(FSOBJ *obp);
 
 extern int
-fsobj_newref(FSOBJ *op,
-	     FSOBJ *parent,
-	     char *name);
-
-extern int
-fsobj_refresh(FSOBJ *op);
-
-extern int
-fsobj_isopen(const FSOBJ *obp);
+fsobj_isreal(const FSOBJ *obp);
 
 extern int
 fsobj_typeof(const FSOBJ *objp);
+
+
+extern int
+fsobj_newref(FSOBJ *op,
+	     FSOBJ *parent,
+	     char *name);
 
 extern int
 fsobj_open(FSOBJ *op,
@@ -112,14 +111,11 @@ fsobj_open(FSOBJ *op,
 	   mode_t mode);
 
 extern int
-fsobj_fake(FSOBJ *dst,
-	   FSOBJ *dstdir,
-	   const FSOBJ *src);
-
-
+fsobj_refresh(FSOBJ *op);
 
 extern void
 fsobj_close(FSOBJ *obp);
+
 
 extern int
 fsobj_equal(const FSOBJ *a,
@@ -148,10 +144,7 @@ extern int
 fsobj_delete(FSOBJ *op,
              const char *np);
 
-extern int
-fsobj_rename(FSOBJ *op,
-             const char *np,
-	     char *newname);
+
 
 extern int
 fsobj_chown(FSOBJ *op,
@@ -168,6 +161,11 @@ extern int
 fsobj_chmod(FSOBJ *op,
             const char *np,
             mode_t mode);
+
+extern int
+fsobj_rename(FSOBJ *op,
+             const char *np,
+	     char *newname);
 
 extern int
 fsobj_stat(FSOBJ *op,
@@ -189,6 +187,5 @@ extern int
 fsobj_mkdir(FSOBJ *op,
             const char *name,
             mode_t mode);
-
 
 #endif
