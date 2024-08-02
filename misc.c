@@ -36,6 +36,7 @@
 
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 #include <sys/types.h>
 
 char *

@@ -742,6 +742,8 @@ fsobj_delete(FSOBJ *op,
         return rc;
 
     if (op != dirp) {
+        if (op->parent)
+            op->parent->refcnt--;
         close(op->fd);
         op->fd = -1;
         memset(&op->stat, 0, sizeof(op->stat));

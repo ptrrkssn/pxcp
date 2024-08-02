@@ -732,7 +732,7 @@ attrs_clone(FSOBJ *src,
     ssize_t s_alen, d_alen = 0;
     char *s_alist = NULL, *d_alist = NULL;
     int rc = 0, s_i, d_i = 0;
-    int d_open = fsobj_isopen(dst);
+    int d_open = fsobj_isreal(dst);
 
 
     /* Get list of extended attribute from source */
@@ -1219,11 +1219,11 @@ clone(FSOBJ *src,
             while ((d_rc = fsobj_readdir(dst, &d_obj)) > 0) {
                 int s_rc;
 
+                
+                s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
                 if (f_debug)
                     fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
                             d_obj.name, s_rc);
-                
-                s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
                 if (s_rc < 0) {
                     if (fsobj_typeof(&d_obj) == S_IFDIR) {
                         d_rc = dir_prune(&d_obj);
@@ -1256,10 +1256,9 @@ clone(FSOBJ *src,
         while ((s_rc = fsobj_readdir(src, &s_obj)) > 0) {
             int d_rc;
 
+            d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
             if (f_debug)
                 fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
-
-            d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
             if (d_rc < 0) {
                 if (f_debug)
                     fprintf(stderr, "*** clone: fsobj_open(%s/%s): rc=%d [DST]\n",
