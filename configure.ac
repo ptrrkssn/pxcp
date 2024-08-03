@@ -30,6 +30,7 @@ AC_FUNC_MALLOC
 AC_CHECK_MEMBERS([struct stat.st_birthtim.tv_sec])
 AC_CHECK_MEMBERS([struct stat.st_mtimespec.tv_sec])
 AC_CHECK_MEMBERS([struct stat.st_mtim.tv_sec])
+AC_CHECK_MEMBERS([struct stat.st_flags])
 
 AC_SEARCH_LIBS([acl_get_perm], [acl])
 
@@ -41,7 +42,7 @@ AC_CHECK_FUNCS([funlinkat unlinkat])
 AC_CHECK_FUNCS([readlinkat freadlink symlinkat])
 dnl AC_CHECK_FUNCS([getdirentries])
 AC_CHECK_FUNCS([mkostempsat mkostemps mkostemp mkstemp])
-AC_CHECK_FUNCS([chflagsat lchflags])
+AC_CHECK_FUNCS([chflagsat fchflags lchflags])
 
 AC_MSG_CHECKING([for working getdirentries...])
 AC_LINK_IFELSE([AC_LANG_PROGRAM(

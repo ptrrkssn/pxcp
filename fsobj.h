@@ -60,6 +60,7 @@
 
 
 #define FSOBJ_MAGIC 0x5729043
+#define FSOBJ_MAXREFS 256
 
 typedef struct fsobj {
     int magic;
@@ -71,6 +72,7 @@ typedef struct fsobj {
     int flags;
     struct stat stat;
     size_t refcnt;
+    struct fsobj *refs[FSOBJ_MAXREFS];
 #ifdef HAVE_GETDIRENTRIES
     char *dbuf;
     off_t dbufpos;
@@ -98,10 +100,6 @@ extern int
 fsobj_typeof(const FSOBJ *objp);
 
 
-extern int
-fsobj_newref(FSOBJ *op,
-	     FSOBJ *parent,
-	     char *name);
 
 extern int
 fsobj_open(FSOBJ *op,
@@ -187,5 +185,10 @@ extern int
 fsobj_mkdir(FSOBJ *op,
             const char *name,
             mode_t mode);
+
+extern int
+fsobj_chflags(FSOBJ *op,
+              const char *np,
+              unsigned long flags);
 
 #endif

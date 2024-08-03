@@ -79,6 +79,7 @@ int f_times = 0;
 int f_owners = 0;
 int f_groups = 0;
 int f_acls = 0;
+int f_flags = 0;
 int f_xattrs = 0;
 int f_prune = 0;
 int f_force = 0;
@@ -113,6 +114,7 @@ struct options {
     { 'w', &f_warnings,  "Display warnings/notices" },
     { 'x', &f_noxdev,    "Do not cross filesystems" },
     { 'A', &f_acls,      "Copy ACLs" },
+    { 'F', &f_flags,     "Copy object flags" },
     { 'M', &f_mmap,      "Use mmap(2)" },
     { 'S', &f_stats,     "Print stats summary" },
     { 'X', &f_xattrs,    "Copy Extended Attributes" },
@@ -140,6 +142,7 @@ unsigned long long b_written = 0;
 #define MD_GID    0x0400
 #define MD_ACL    0x1000
 #define MD_ATTR   0x2000
+#define MD_FLAG   0x4000
 
 #define MD_CONTENT  0x00F0
 #define MD_METADATA 0xFF00
@@ -199,12 +202,14 @@ symlink_clone(FSOBJ *src,
 
     if (f_force || d_plen < 0 || strcmp(s_pbuf, d_pbuf) != 0) {
 	if (!f_dryrun) {
+#if 0
             if (d_plen >= 0 && fsobj_delete(dst, NULL) < 0) {
                 fprintf(stderr, "%s: Error: %s: Delete(symlink): %s\n",
                         argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
-
+#endif
+            
 	    if (fsobj_symlink(dst, NULL, s_pbuf) < 0) {
 		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
 			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
@@ -248,7 +253,7 @@ file_clone(FSOBJ *src,
 
     if (f_dryrun)
         return 0;
-    
+
 #if defined(HAVE_MKOSTEMPSAT)
     strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
     tmpname = tmppath;
@@ -278,6 +283,7 @@ file_clone(FSOBJ *src,
     } while (tfd < 0 && errno == EEXIST && n < 5);
     tmpname = tmppath;
 #endif
+
     if (tfd < 0) {
       fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
               argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
@@ -373,7 +379,20 @@ file_clone(FSOBJ *src,
         }
     }
 
-    close(tfd);
+    if (dst->fd >= 0) {
+        int rc;
+        
+        rc = dup2(tfd, dst->fd);
+        if (f_debug)
+            fprintf(stderr, "** file_clone: dup2(%d, %d) -> %d\n",
+                    tfd, dst->fd, rc);
+        close(tfd);
+    } else {
+        dst->fd = tfd;
+        if (f_debug)
+            fprintf(stderr, "** file_clone: op->fd = %d\n",
+                    tfd);
+    }
     
     if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
         int t_errno = errno;
@@ -574,11 +593,33 @@ mode_clone(FSOBJ *src,
                 /* Linux doesn't support changing permissions on symbolic links */
                 return 0;
       
-            fprintf(stderr, "%s: Error: %s: Setting Mode Bits(0%o -> 0%o): %s\n",
+            fprintf(stderr, "%s: Error: %s: Setting Mode Bits(0%o <- 0%o): %s\n",
                     argv0,
                     fsobj_path(dst),
                     (dst->stat.st_mode&ALLPERMS),
                     (src->stat.st_mode&ALLPERMS),
+                    strerror(errno));
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+
+int
+flags_clone(FSOBJ *src,
+            FSOBJ *dst) {
+    if (f_dryrun)
+        return 0;
+    
+    if (f_force || src->stat.st_flags != dst->stat.st_flags) {
+        if (fsobj_chflags(dst, NULL, src->stat.st_flags) < 0) {
+            fprintf(stderr, "%s: Error: %s: Setting Flag Bits(0x%x <- 0x%x): %s\n",
+                    argv0,
+                    fsobj_path(dst),
+                    dst->stat.st_flags,
+                    src->stat.st_flags,
                     strerror(errno));
             return -1;
         }
@@ -1248,8 +1289,10 @@ clone(FSOBJ *src,
                 fsobj_reset(&s_obj);
                 fsobj_reset(&d_obj);
             }
+#if 0
             fsobj_reset(&s_obj);
             fsobj_reset(&d_obj);
+#endif
         }
 
         fsobj_rewind(src);
@@ -1276,14 +1319,17 @@ clone(FSOBJ *src,
                 break;
             }
 
-            fsobj_reset(&s_obj);
             fsobj_reset(&d_obj);
+            fsobj_reset(&s_obj);
         }
 
-        fsobj_fini(&s_obj);
         fsobj_fini(&d_obj);
-        if (rc < 0)
+        fsobj_fini(&s_obj);
+        if (rc < 0) {
+            if (f_ignore)
+                goto End;
             return rc;
+        }
         break;
 
     case S_IFREG:
@@ -1292,8 +1338,11 @@ clone(FSOBJ *src,
         if (f_force || src->stat.st_size != dst->stat.st_size || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
             if (!f_dryrun) {
                 rc = file_clone(src, dst);
-                if (rc < 0)
+                if (rc < 0) {
+                    if (f_ignore)
+                        goto End;
                     return -1;
+                }
             }
             mdiff |= MD_DATA;
         }
@@ -1303,15 +1352,18 @@ clone(FSOBJ *src,
         if (f_debug)
             fprintf(stderr, "*** clone: Doing symlink\n");
         rc = symlink_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0) {
+            if (f_ignore)
+                goto End;
             return -1;
+        }
         if (rc > 0)
             mdiff |= MD_DATA;
     }
 
     if (f_owners) {
         rc = owner_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0 && !f_ignore)
             return -1;
         if (rc > 0)
             mdiff |= MD_UID;
@@ -1319,21 +1371,21 @@ clone(FSOBJ *src,
 
     if (f_groups) {
         rc = group_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0 && !f_ignore)
             return -1;
         if (rc > 0)
             mdiff |= MD_GID;
     }
 
     rc = mode_clone(src, dst);
-    if (rc < 0)
+    if (rc < 0 && !f_ignore)
         return -1;
     if (rc > 0)
         mdiff |= MD_MODE;
 
     if (f_acls) {
         rc = acls_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0 && !f_ignore)
             return -1;
         if (rc > 0)
             mdiff |= MD_ACL;
@@ -1341,28 +1393,41 @@ clone(FSOBJ *src,
 
     if (f_xattrs) {
         rc = attrs_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0 && !f_ignore)
             return -1;
         if (rc > 0)
             mdiff |= MD_ATTR;
     }
 
+    if (f_flags) {
+        rc = flags_clone(src, dst);
+        if (rc < 0 && !f_ignore)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_FLAG;
+    }
+
     if (f_times) {
         rc = times_clone(src, dst);
-        if (rc < 0)
+        if (rc < 0 && !f_ignore)
             return -1;
         if (rc > 0)
             mdiff |= MD_TIME;
     }
 
+ End:
     if (f_verbose > 2 || (f_verbose && mdiff)) {
         if (mdiff & MD_NEW) {
         } else {
-            if (mdiff & (MD_DATA|MD_TIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID)) {
-                putchar('!');
-                ++n_updated;
-            } else
-                putchar(' ');
+            if (rc < 0)
+                putchar('?');
+            else {
+                if (mdiff & (MD_DATA|MD_TIME|MD_ATTR|MD_ACL|MD_MODE|MD_UID|MD_GID)) {
+                    putchar('!');
+                    ++n_updated;
+                } else
+                    putchar(' ');
+            }
             if (f_verbose > 1)
                 printf(" %s ->", fsobj_path(src));
             printf(" %s", fsobj_path(dst));
@@ -1483,7 +1548,7 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_src, NULL, argv[i], O_RDONLY, 0) <= 0) {
+    if (fsobj_open(&root_src, NULL, argv[i], O_PATH, 0) <= 0) {
 	fprintf(stderr, "%s: Error: %s: Open(source): %s\n",
 		argv[0], argv[i], strerror(errno));
         rc = 1;
@@ -1509,8 +1574,7 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_dst, NULL, argv[i], (f_exist ? 0 : O_CREAT)|O_RDONLY,
-		   root_src.stat.st_mode) <= 0) {
+    if (fsobj_open(&root_dst, NULL, argv[i], O_PATH, root_src.stat.st_mode) < 0) {
 	fprintf(stderr, "%s: Error: %s: Open(destination): %s\n",
 		argv[0], argv[i], strerror(errno));
         rc = 1;
