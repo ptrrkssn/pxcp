@@ -74,7 +74,7 @@ setup-check-acl:
 setup-check-tree:
 	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && echo "Hello, World!" >t/s/d/f2.txt
 
-setup-check: setup-check-tree setup-check-acl
+setup-check: pxcp setup-check-tree setup-check-acl
 
 check-1: setup-check
 	@echo ""; echo "--- Check 1: Cloning t/s -> t/d"
@@ -93,8 +93,8 @@ check-4: setup-check
 	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAp  t/s t/d && echo "--> OK"
 
 check-5: check-4
-	@echo ""; echo "--- Check 5: ls -lR"
-	@(cd t/s ; ls -lR .) >/tmp/pxcp-s.out && (cd t/d ; ls -lR .) >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
+	@echo ""; echo "--- Check 5: ls -alR"
+	@(cd t/s ; ls -alR . | grep -v '^total') >/tmp/pxcp-s.out && (cd t/d ; ls -alR . | grep -v '^total') >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
 
 check-6: check-4
 	@echo ""; echo "--- Check 6: File Content"
