@@ -1163,13 +1163,6 @@ fsobj_chmod(FSOBJ *op,
                     op->fd, mode,
                     rc, rc < 0 ? strerror(errno) : "",
                     op->flags, _fsobj_open_flags(op->flags));
-        if (rc < 0 && errno == EBADF) {
-            char buf[256];
-
-            sprintf(buf, "lsof -p %d", getpid());
-            system(buf);
-        }
-            
         goto End;
     }
 
@@ -1728,6 +1721,7 @@ int
 fsobj_chflags(FSOBJ *op,
               const char *np,
               unsigned long flags) {
+#ifdef HAVE_STRUCT_STAT_ST_FLAGS
     int rc;
     const char *name;
     char *path = NULL;
@@ -1808,14 +1802,17 @@ fsobj_chflags(FSOBJ *op,
         return rc;
 
     if (op != dirp) {
-#ifdef HAVE_STRUCT_STAT_ST_FLAGS
         if (op->stat.st_flags == flags)
             return 0;
     
         /* XXX: Full refresh with fsobj_stat() ? */
         op->stat.st_flags = flags;
-#endif
+
     }
     
     return 1;
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
 }

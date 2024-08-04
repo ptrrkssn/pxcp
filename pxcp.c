@@ -638,7 +638,8 @@ flags_clone(FSOBJ *src,
             FSOBJ *dst) {
     if (f_dryrun)
         return 0;
-    
+
+#if HAVE_STRUCT_STAT_ST_FLAGS
     if (f_force || src->stat.st_flags != dst->stat.st_flags) {
         if (fsobj_chflags(dst, NULL, src->stat.st_flags) < 0) {
             fprintf(stderr, "%s: Error: %s: Setting Flag Bits(0x%x <- 0x%x): %s\n",
@@ -650,7 +651,8 @@ flags_clone(FSOBJ *src,
             return -1;
         }
     }
-
+#endif
+    
     return 0;
 }
 
