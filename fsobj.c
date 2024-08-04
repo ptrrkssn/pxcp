@@ -1752,7 +1752,7 @@ fsobj_chflags(FSOBJ *op,
         rc = fchflags(op->fd, flags);
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_chflags(%s, %s, 0x%lx): fchflags(%d, 0x%lx) -> %d (%s)\n",
-                    fsobj_path(op), np ? np : "NULL", mode,
+                    fsobj_path(op), np ? np : "NULL", flags,
                     op->fd, flags,
                     rc, rc < 0 ? strerror(errno) : "");
         goto End;
