@@ -330,12 +330,18 @@ fsobj_open(FSOBJ *op,
         flags |= O_DIRECTORY;
     }
 
+    flags |= O_NOFOLLOW;
+    
 #ifdef HAVE_OPENAT
-    fd = openat(FSOBJ_FD(dirp), name, (flags&O_PATH) != 0 ? flags : flags|O_NOFOLLOW, mode);
+    fd = openat(FSOBJ_FD(dirp), name, flags, mode);
+#ifdef O_SYMLINK
+    if (fd < 0 && errno == ELOOP && flags & O_SYMLINK)
+	fd = openat(FSOBJ_FD(dirp), name, flags&~O_NOFOLLOW, mode);
+#endif
     if (f_debug)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%s) [op=%p, flags=%s]\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
-                FSOBJ_FD(dirp), name, flags|O_NOFOLLOW, mode,
+                FSOBJ_FD(dirp), name, flags, mode,
                 fd, fd < 0 ? strerror(errno) : "", op,
                 _fsobj_open_flags(flags));
 #else
@@ -343,7 +349,7 @@ fsobj_open(FSOBJ *op,
     if (!path)
         abort();
 
-    fd = open(path, flags|O_NOFOLLOW, mode);
+    fd = open(path, flags, mode);
     if (f_debug)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): open(%s, 0x%x, %04o) -> %d (%s)\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
@@ -749,7 +755,10 @@ fsobj_readdir(FSOBJ *dp,
 				  (dep->d_name[1] == '.' && dep->d_name[2] == '\0')))
         goto Again;
 
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_readdir: got: %s\n", dep->d_name);
     rc = fsobj_open(op, dp, dep->d_name, O_PATH, 0);
+    
     return rc > 0 ? 1 : -1;
 }
 
