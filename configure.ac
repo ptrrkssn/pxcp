@@ -15,7 +15,7 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
 # Checks for header files.
-AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h sys/dirent.h])
+AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h sys/dirent.h sys/xattr.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
@@ -35,7 +35,8 @@ AC_CHECK_MEMBERS([struct stat.st_flags])
 AC_SEARCH_LIBS([acl_get_perm], [acl])
 
 AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np])
-AC_CHECK_FUNCS([extattr_get_fd])
+AC_CHECK_FUNCS([extattr_get_fd extattr_set_fd])
+AC_CHECK_FUNCS([fgetxattr fsetxattr])
 AC_CHECK_FUNCS([utimensat futimens])
 AC_CHECK_FUNCS([fstatat fchownat openat renameat mkdirat fchmodat])
 AC_CHECK_FUNCS([funlinkat unlinkat])

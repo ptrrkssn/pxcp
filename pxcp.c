@@ -657,97 +657,47 @@ flags_clone(FSOBJ *src,
 }
 
 
-acl_t
-acl_get(FSOBJ *op,
-        acl_type_t t) {
-#if HAVE_ACL_GET_FD_NP
-    if (op->fd >= 0)
-        return acl_get_fd_np(op->fd, t);
-#endif
-#if HAVE_ACL_GET_LINK_NP
-    return acl_get_link_np(fsobj_path(op), t);
-#else
-# if HAVE_ACL_GET_FD
-    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS)
-        return acl_get_fd(op->fd);
-# endif
-# if HAVE_ACL_GET_FILE
-    return acl_get_file(fsobj_path(op), t);
-# else
-    errno = ENOSYS;
-    return NULL;
-# endif
-#endif
-}
-
-
-int
-acl_set(FSOBJ *op,
-        acl_t a,
-        acl_type_t t) {
-#if HAVE_ACL_SET_FD_NP
-    if (op->fd >= 0 && (op->flags & O_PATH) == 0)
-        return acl_set_fd_np(op->fd, a, t);
-#endif
-#if HAVE_ACL_SET_LINK_NP
-    return acl_set_link_np(fsobj_path(op), t, a);
-#else
-# if HAVE_ACL_SET_FD
-    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS)
-        return acl_set_fd(op->fd, a);
-# endif
-# if HAVE_ACL_SET_FILE
-    return acl_set_file(fsobj_path(op), t, a);
-# else
-    errno = ENOSYS;
-    return NULL;
-# endif
-#endif
-}
 
 int
 acls_clone(FSOBJ *src,
            FSOBJ *dst) {
-    int rc = 0;
-    acl_t s_acl = NULL, d_acl = NULL;
-    acl_type_t s_t, d_t;
+    int rc = 0, s_rc, d_rc;
+    GACL s_acl, d_acl;
 
     
 #ifdef ACL_TYPE_NFS4
-    s_acl = acl_get(src, s_t = ACL_TYPE_NFS4);
+    s_rc = gacl_get(&s_acl, src, ACL_TYPE_NFS4);
 #endif
 #ifdef ACL_TYPE_ACCESS
-    if (!s_acl)
-        s_acl = acl_get(src, s_t = ACL_TYPE_ACCESS);
+    if (s_rc < 0)
+        s_rc = gacl_get(&s_acl, src, ACL_TYPE_ACCESS);
 #endif
 
 #ifdef ACL_TYPE_NFS4
-    d_acl = acl_get(dst, d_t = ACL_TYPE_NFS4);
-    if (!d_acl)
+    d_rc = gacl_get(&d_acl, dst, ACL_TYPE_NFS4);
 #endif
 #ifdef ACL_TYPE_ACCESS
-    if (!d_acl)
-      d_acl = acl_get(dst, d_t = ACL_TYPE_ACCESS);
+    if (d_rc < 0)
+      d_rc = gacl_get(&d_acl, dst, ACL_TYPE_ACCESS);
 #endif
 
-    if (!s_acl && !d_acl)
+    if (s_rc < 0 && d_rc < 0)
         return 0;
 
-    if (f_force || (!s_acl && d_acl) || (s_acl && !d_acl) || (s_acl && (rc = acl_diff(s_acl, d_acl)))) {
-        if (!s_acl) {
+    if (f_force || (s_rc < 0 && d_rc >= 0) || (s_rc >= 0 && d_rc < 0) || (s_rc >= 0 && (rc = gacl_diff(&s_acl, &d_acl)))) {
+        if (s_rc < 0) {
             fprintf(stderr, "No source ACL, generating trivial ACL\n");
 
             /* Generate a trivial ACL from the mode bits */
-            s_acl = acl_init(0);
             /* XXX: ToDO */
             abort();
         }
 
         if (!f_dryrun) {
-            if (acl_set(dst, s_acl, s_t) < 0) {
-                fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s [flags=0x%x]\n",
+            if (gacl_set(dst, &s_acl) < 0) {
+                fprintf(stderr, "%s: Error: %s: Setting ACL: %s\n",
                         argv0, fsobj_path(dst),
-                        dst->fd, strerror(errno), dst->flags);
+                        strerror(errno));
                 rc = -1;
                 goto End;
             }
@@ -756,25 +706,24 @@ acls_clone(FSOBJ *src,
     }
 
 #if defined(ACL_TYPE_ACCESS) && defined(ACL_TYPE_DEFAULT)
-    if (d_t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
-        acl_free(s_acl);
-        acl_free(d_acl);
+    if (s_acl.t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
+        gacl_free(&s_acl);
+        gacl_free(&d_acl);
 
-        s_acl = acl_get(src, s_t = ACL_TYPE_DEFAULT);
-        d_acl = acl_get(dst, d_t = ACL_TYPE_DEFAULT);
+        s_rc = gacl_get(&s_acl, src, ACL_TYPE_DEFAULT);
+        d_rc = gacl_get(&d_acl, dst, ACL_TYPE_DEFAULT);
 
-        if (f_force || (!s_acl && d_acl) || (s_acl && !d_acl) || (s_acl && (rc = acl_diff(s_acl, d_acl)))) {
-            if (!s_acl) {
+        if (f_force || (s_rc < 0 && d_rc >= 0) || (s_rc >= 0 && d_rc < 0) || (s_rc >= 0 && (rc = gacl_diff(&s_acl, &d_acl)))) {
+            if (s_rc < 0) {
                 /* Generate a trivial ACL from the mode bits */
-                s_acl = acl_init(0);
                 /* XXX: ToDO */
                 abort();
             }
             if (!f_dryrun) {
-                if (acl_set(dst, s_acl, s_t) < 0) {
-                    fprintf(stderr, "%s: Error: %s: acl_set(fd=%d): %s\n",
+                if (gacl_set(dst, &s_acl) < 0) {
+                    fprintf(stderr, "%s: Error: %s: Setting Default ACL: %s\n",
                             argv0, fsobj_path(dst),
-                            dst->fd, strerror(errno));
+                            strerror(errno));
                     rc = -1;
                     goto End;
                 }
@@ -785,11 +734,8 @@ acls_clone(FSOBJ *src,
 #endif
 
  End:
-    if (s_acl)
-        acl_free(s_acl);
-    if (d_acl)
-        acl_free(d_acl);
-
+    gacl_free(&s_acl);
+    gacl_free(&d_acl);
     return rc;
 }
 

@@ -42,6 +42,9 @@
 /* Define to 1 if you have the `extattr_get_fd' function. */
 #undef HAVE_EXTATTR_GET_FD
 
+/* Define to 1 if you have the `extattr_set_fd' function. */
+#undef HAVE_EXTATTR_SET_FD
+
 /* Define to 1 if you have the `fchflags' function. */
 #undef HAVE_FCHFLAGS
 
@@ -51,8 +54,14 @@
 /* Define to 1 if you have the `fchownat' function. */
 #undef HAVE_FCHOWNAT
 
+/* Define to 1 if you have the `fgetxattr' function. */
+#undef HAVE_FGETXATTR
+
 /* Define to 1 if you have the `freadlink' function. */
 #undef HAVE_FREADLINK
+
+/* Define to 1 if you have the `fsetxattr' function. */
+#undef HAVE_FSETXATTR
 
 /* Define to 1 if you have the `fstatat' function. */
 #undef HAVE_FSTATAT
@@ -147,6 +156,9 @@
 
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <sys/xattr.h> header file. */
+#undef HAVE_SYS_XATTR_H
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H

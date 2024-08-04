@@ -4669,6 +4669,12 @@ then :
   printf "%s\n" "#define HAVE_SYS_DIRENT_H 1" >>confdefs.h
 
 fi
+ac_fn_c_check_header_compile "$LINENO" "sys/xattr.h" "ac_cv_header_sys_xattr_h" "$ac_includes_default"
+if test "x$ac_cv_header_sys_xattr_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SYS_XATTR_H 1" >>confdefs.h
+
+fi
 
 
 # Checks for typedefs, structures, and compiler characteristics.
@@ -5357,6 +5363,25 @@ ac_fn_c_check_func "$LINENO" "extattr_get_fd" "ac_cv_func_extattr_get_fd"
 if test "x$ac_cv_func_extattr_get_fd" = xyes
 then :
   printf "%s\n" "#define HAVE_EXTATTR_GET_FD 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "extattr_set_fd" "ac_cv_func_extattr_set_fd"
+if test "x$ac_cv_func_extattr_set_fd" = xyes
+then :
+  printf "%s\n" "#define HAVE_EXTATTR_SET_FD 1" >>confdefs.h
+
+fi
+
+ac_fn_c_check_func "$LINENO" "fgetxattr" "ac_cv_func_fgetxattr"
+if test "x$ac_cv_func_fgetxattr" = xyes
+then :
+  printf "%s\n" "#define HAVE_FGETXATTR 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "fsetxattr" "ac_cv_func_fsetxattr"
+if test "x$ac_cv_func_fsetxattr" = xyes
+then :
+  printf "%s\n" "#define HAVE_FSETXATTR 1" >>confdefs.h
 
 fi
 

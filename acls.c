@@ -31,15 +31,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "config.h"
 #include "acls.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#ifdef HAVE_SYS_XATTR_H
+#include <sys/xattr.h>
+#endif
 
 #ifdef __DARWIN_ACL_EXTENDED_ALLOW
 #include <membership.h>
 #endif
+
+
+#define LINUX_NFS4_ACL_XATTR "system.nfs4_acl"
+
 
 #ifdef ACL_EXECUTE
 static acl_perm_t acl_perms_posix[] = {
@@ -84,9 +93,9 @@ static int acl_flags_nfs4[] = {
 extern int f_debug;
 
 
-int
-acl_diff(acl_t src,
-	 acl_t dst) {
+static int
+_acl_diff(acl_t src,
+          acl_t dst) {
     int d_rc, s_rc;
 #ifndef __DARWIN_ACL_EXTENDED_ALLOW
     int j;
@@ -289,4 +298,151 @@ acl_diff(acl_t src,
 	return 9;
 
     return 0;
+}
+
+
+
+int
+gacl_diff(GACL *src,
+          GACL *dst) {
+    int d;
+
+    d = src->t - dst->t;
+    if (d)
+        return d;
+
+#ifdef GACL_MAGIC_NFS4
+    if (src->t == GACL_MAGIC_NFS4) {
+        d = src->s - dst->s;
+        if (d)
+            return d;
+      
+        return memcmp(src->a, dst->a, src->s);
+    }
+#endif
+    
+    return _acl_diff(src->a, dst->a);
+}
+
+
+int
+gacl_get(GACL *ga,
+         FSOBJ *op,
+         acl_type_t t) {
+    acl_t a = NULL;
+    
+
+    memset(ga, 0, sizeof(*ga));
+    
+#ifdef GACL_MAGIC_NFS4
+    if (op->fd >= 0 && t == ACL_TYPE_NFS4) {
+        ssize_t rc;
+       
+        rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, NULL, 0);
+        if (rc > 0) {
+            ga->a = malloc(rc);
+            if (!ga->a)
+                abort();
+            ga->s = rc;
+            
+            rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s);
+            if (rc != ga->s) {
+                free(ga->a);
+                memset(ga, 0, sizeof(*ga));
+                return -1;
+            }
+
+            ga->t = t;
+            return 0;
+        }
+    }
+#endif
+#if HAVE_ACL_GET_FD_NP
+    if (op->fd >= 0) {
+        a = acl_get_fd_np(op->fd, t);
+        goto End;
+    }
+#endif
+#if HAVE_ACL_GET_LINK_NP
+    a = acl_get_link_np(fsobj_path(op), t);
+    goto End;
+#else
+# if HAVE_ACL_GET_FD
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS) {
+        a = acl_get_fd(op->fd);
+        goto End;
+    }
+# endif
+# if HAVE_ACL_GET_FILE
+    a = acl_get_file(fsobj_path(op), t);
+    goto End;
+# else
+    errno = ENOSYS;
+    return -1;
+# endif
+#endif
+ End:
+    if (!a)
+      return -1;
+    
+    ga->a = a;
+    ga->s = 0;
+    ga->t = t;
+    return 0;
+}
+
+
+int
+gacl_set(FSOBJ *op,
+         GACL *ga) {
+#ifdef GACL_MAGIC_NFS4
+    /* Linux */
+    if (ga->t == ACL_TYPE_NFS4) {
+        int rc;
+      
+        if (op->fd >= 0)
+            rc = fsetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
+        else
+            rc = lsetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
+        return rc;
+    }
+#endif
+#if HAVE_ACL_SET_FD_NP
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0)
+        return acl_set_fd_np(op->fd, ga->a, ga->t);
+#endif
+#if HAVE_ACL_SET_LINK_NP
+    return acl_set_link_np(fsobj_path(op), ga->t, ga->a);
+#else
+# if HAVE_ACL_SET_FD
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && ga->t == ACL_TYPE_ACCESS)
+        return acl_set_fd(op->fd, ga->a);
+# endif
+# if HAVE_ACL_SET_FILE
+    return acl_set_file(fsobj_path(op), ga->t, ga->a);
+# else
+    errno = ENOSYS;
+    return NULL;
+# endif
+#endif
+}
+
+
+void
+gacl_free(GACL *ga) {
+    if (!ga)
+        return;
+    
+#if HAVE_FGETXATTR
+    if (ga->t == ACL_TYPE_NFS4) {
+        if (ga->a)
+            free(ga->a);
+        memset(ga, 0, sizeof(*ga));
+        return;
+    }
+#endif
+
+    if (ga->a)
+        acl_free(ga->a);
+    memset(ga, 0, sizeof(*ga));
 }

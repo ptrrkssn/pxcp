@@ -35,6 +35,7 @@
 #define PXCP_ACLS_H 1
 
 #include "config.h"
+#include "fsobj.h"
 
 #include <sys/types.h>
 
@@ -47,19 +48,44 @@
 #endif
 
 
+
 #if !HAVE_ACL_GET_PERM_NP && HAVE_ACL_GET_PERM
 #define acl_get_perm_np(ps,p) acl_get_perm(ps,p)
 #endif
 
-
-#ifdef __DARWIN_ACL_EXTENDED_ALLOW
-#define ACL_TYPE_NFS4 ACL_TYPE_EXTENDED
+#ifndef ACL_TYPE_NFS4
+# ifdef __DARWIN_ACL_EXTENDED_ALLOW
+#  define ACL_TYPE_NFS4 ACL_TYPE_EXTENDED
+# else
+#  if defined(__linux__) && defined(HAVE_FGETXATTR)
+#   define GACL_MAGIC_NFS4 (0x10000000)
+#   define ACL_TYPE_NFS4   GACL_MAGIC_NFS4
+#  endif
+# endif
 #endif
 
 
+typedef struct gacl {
+  acl_type_t t;
+  size_t s;
+  void *a;
+} GACL;
+
 
 extern int
-acl_diff(acl_t src,
-	 acl_t dst);
+gacl_get(GACL *ga,
+         FSOBJ *op,
+         acl_type_t t);
+
+extern int
+gacl_set(FSOBJ *op,
+         GACL *ga);
+
+extern int
+gacl_diff(GACL *src,
+	  GACL *dst);
+
+extern void
+gacl_free(GACL *ga);
 
 #endif
