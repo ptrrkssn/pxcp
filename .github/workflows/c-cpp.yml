@@ -15,7 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: install dependencies
-      run: test -x /usr/bin/apt && sudo apt install libacl1-dev
+      run: test "`uname -s`" = "Linux" -a -x /usr/bin/apt && sudo apt install libacl1-dev
     - name: configure
       run: ./configure
     - name: make
