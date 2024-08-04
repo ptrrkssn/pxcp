@@ -1499,6 +1499,7 @@ main(int argc,
 	f_times   += f_all;
 	f_acls    += f_all;
 	f_xattrs  += f_all;
+	f_flags   += f_all;
     }
 
     if (f_groups && geteuid() != 0) {

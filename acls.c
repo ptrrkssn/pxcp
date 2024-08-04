@@ -399,7 +399,7 @@ gacl_set(FSOBJ *op,
     /* Linux */
     if (ga->t == ACL_TYPE_NFS4) {
         int rc;
-      
+
         if (op->fd >= 0)
             rc = fsetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
         else
