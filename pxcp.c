@@ -263,7 +263,7 @@ file_clone(FSOBJ *src,
 	if (f_debug > 1)
 	    fprintf(stderr, "** file_clone(%s,%s): mkostempat(%d, %s, 0, 0x%x [%s]) -> %d (%s)\n",
 		    fsobj_path(src), fsobj_path(dst),
-		    dst->parent->fd, tmppath, f, _fsobj_open_flagS(f),
+		    dst->parent->fd, tmppath, f, _fsobj_open_flags(f),
 		    tfd, tfd < 0 ? strerror(errno) : "");
     }
 #elif defined(HAVE_MKOSTEMP)
