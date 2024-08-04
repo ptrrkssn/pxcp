@@ -97,7 +97,7 @@ struct options {
     char *help;
 } options[] = {
     { 'a', &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
-    { 'd', &f_debug,     "Set debugging outputlevel" },
+    { 'd', &f_debug,     "Set debugging level" },
     { 'e', &f_exist,     "Only copy to existing targets" },
     { 'f', &f_force,     "Force updates" },
     { 'g', &f_groups,    "Copy object group" },

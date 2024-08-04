@@ -1,2 +1,57 @@
 # pxcp
-Peter's Extended Copy Tool
+
+Peter's Extended Copy Tool for FreeBSD, Linux & MacOS (and Solaris in the future)
+
+Supports copying and mirroring file trees including attributes, timestamps, ACLs, Extended Attributes,
+File Flags.
+
+
+AUTHOR
+
+  Peter Eriksson <pen@lysator.liu.se>
+
+
+Handles various ACLs:
+
+ POSIX (Linux, FreeBSD)
+ ZFS (FreeBSD)
+ NFS4 (all, including on Linux)
+ EXTENDED (MacOS)
+
+
+USAGE:
+  ./pxcp [options] <src> <dst>
+
+Options:
+  -a    Archive mode (enables g,o,r,t,A,F,X options)
+  -d    Set debugging output level
+  -e    Only copy to existing targets
+  -f    Force updates
+  -g    Copy object group
+  -h    Display usage information
+  -i    Ignore non-fatal errors and continue
+  -m    Only copy metadata
+  -n    Enable dry-run mode
+  -o    Copy object owner
+  -p    Prune removed objects
+  -r    Enable recursion
+  -s    Set sync mode
+  -t    Copy modfication times
+  -v    Set verbosity level
+  -w    Display warnings/notices
+  -x    Do not cross filesystems
+  -A    Copy ACLs
+  -F    Copy file flags
+  -M    Use mmap(2)
+  -S    Print stats summary
+  -X    Copy Extended Attributes
+
+All options may optionally take a numeric argument.
+
+
+EXAMPLES:
+	# pxcp -vap src-dir dst-dir
+	Verbose, Archive, and Prune (ie, mirror src-dir to dst-dir)
+
+	# pxdp -vam -t0 src-dir dst-dir
+	Verbose, Archive, Metadata only (do not touch file contents), disable clone timestamps
