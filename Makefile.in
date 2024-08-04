@@ -104,7 +104,7 @@ check-7: check-4
 	@echo ""; echo "--- Check 7: ACL ACE entry copied"
 	@if [ `uname -s` = "Linux" ]; then \
 		if `df --output=fstype t/s/f.txt|tail -1` = "nfs4" ]; then \
-			nfs4_getfacl t/s/f.txt | grep 'A::root@.*:r$' && echo "--> OK"; \
+			nfs4_getfacl t/s/f.txt | grep '^A::root@.*:r$$' && echo "--> OK"; \
 		else \
 			getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
 		fi \
@@ -113,11 +113,11 @@ check-7: check-4
 	@if [ `uname -s` = "Darwin" ];  then getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; fi
 
 check-8: check-4
-	@echo ""; echo "--- Check 8: Cloning t/e -> t/d"
+	@echo ""; echo "--- Check 8: Cloning t/e -> t/d (with purge)"
 	@./pxcp -vrAp t/e t/d && echo "--> OK"
 
 check-9: check-8
-	@echo ""; echo "--- Check 9: Cloning t/e -> t/d (again)"
+	@echo ""; echo "--- Check 9: Cloning t/e -> t/d (again, with purge)"
 	@./pxcp -vrAp t/e t/d && echo "--> OK"
 
 check-10: check-9

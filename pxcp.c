@@ -1265,7 +1265,7 @@ clone(FSOBJ *src,
                 if (f_debug)
                     fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
                             d_obj.name, s_rc);
-                if (s_rc < 0) {
+                if (s_rc == 0) {
                     if (fsobj_typeof(&d_obj) == S_IFDIR) {
                         d_rc = dir_prune(&d_obj);
                         if (d_rc < 0) {

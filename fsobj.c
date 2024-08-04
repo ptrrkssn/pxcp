@@ -155,10 +155,11 @@ fsobj_reset(FSOBJ *op) {
     if (op->refcnt > 0) {
         int i;
 
+        fprintf(stderr, "** fsobj_reset(%s): refcnt=%lu\n",
+                fsobj_path(op), op->refcnt);
         for (i = 0; i < op->refcnt; i++)
-            fprintf(stderr, "** fsobj_reset(%s): ref#%d: %s\n",
-                    fsobj_path(op),
-                    i, fsobj_path(op->refs[i]));
+            fprintf(stderr, "\t%d. %s\n", i,
+                    op->refs[i]->magic == FSOBJ_MAGIC ? fsobj_path(op->refs[i]) : "-Invalid magic-");
         
 	abort();
     }
@@ -181,7 +182,8 @@ fsobj_reset(FSOBJ *op) {
     if (op->parent) {
         int i;
 
-        for (i = 0; i < op->parent->refcnt && op->refs[i] != op; i++)
+        
+        for (i = 0; i < op->parent->refcnt && op != op->parent->refs[i]; i++)
             ;
             
         if (i >= op->parent->refcnt)
@@ -304,10 +306,11 @@ fsobj_open(FSOBJ *op,
 
     if ((flags & O_CREAT) != 0 && S_ISDIR(mode)) {
         rc = fsobj_mkdir(dirp, name, mode);
-        fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): fsobj_mkdir(%s, %s, %04o) -> %d (%s)\n",
-                fsobj_path(dirp), np ? np : "NULL", flags, mode,
-                fsobj_path(dirp), name, mode, 
-                rc, rc < 0 ? strerror(errno) : "");
+        if (f_debug > 1) 
+            fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): fsobj_mkdir(%s, %s, %04o) -> %d (%s)\n",
+                    fsobj_path(dirp), np ? np : "NULL", flags, mode,
+                    fsobj_path(dirp), name, mode, 
+                    rc, rc < 0 ? strerror(errno) : "");
         if (rc < 0)
             return -1;
         
@@ -344,15 +347,28 @@ fsobj_open(FSOBJ *op,
             fprintf(stderr, "** fsobj_open: fd < 0 && (flags & O_PATH) == 0\n");
         return -1;
     }
-    
-    op->name = strdup(name);
+
     op->flags = flags;
     op->fd = fd;
     
-    op->parent = dirp;
-    if (op->parent) {
-        op->parent->refs[op->parent->refcnt] = op;
-        op->parent->refcnt++;
+    if (!op->name) {
+        op->name = strdup(name);
+    
+        op->parent = dirp;
+        if (op->parent) {
+            int i;
+
+            for (i = 0; i < op->parent->refcnt && op != op->parent->refs[i]; i++)
+                ;
+            if (i < op->parent->refcnt) {
+                fprintf(stderr, "fsobj_open(%s): parent already exists in refs\n",
+                        fsobj_path(op));
+                
+                abort();
+            }
+            op->parent->refs[op->parent->refcnt] = op;
+            op->parent->refcnt++;
+        }
     }
     
     rc = fsobj_stat(op, NULL, NULL);
