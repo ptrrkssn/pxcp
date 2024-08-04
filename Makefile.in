@@ -101,16 +101,24 @@ check-6: check-4
 	@cat t/d/d/f2.txt && cmp t/s/d/f2.txt t/d/d/f2.txt && echo "--> OK"
 
 check-7: check-4
-	@echo ""; echo "--- Check 7: ACL ACE entry copied"
+	@echo ""
 	@if [ "`uname -s`" = "Linux" ]; then \
 		if [ "`df --output=fstype t/s/f.txt|tail -1`" = "nfs4" ]; then \
-			nfs4_getfacl t/s/f.txt | grep '^A::root@.*:r$$' && echo "--> OK"; \
+			echo "--- Check 7: ACL ACE entry copied (Linux, nfs4)"; \
+			nfs4_getfacl t/d/f.txt | grep '^A::root@.*:r$$' && echo "--> OK"; \
 		else \
-			getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
+			echo "--- Check 7: ACL ACE entry copied (Linux, non-nfs4)"; \
+			getfacl t/d/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
 		fi \
 	 fi
-	@if [ `uname -s` = "FreeBSD" ]; then getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; fi
-	@if [ `uname -s` = "Darwin" ];  then ls -le t/s/f.txt | fgrep 'user:root allow read' && echo "--> OK"; fi
+	@if [ `uname -s` = "FreeBSD" ]; then \
+		echo "--- Check 7: ACL ACE entry copied (FreeBSD)"; \
+		getfacl t/d/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
+	 fi
+	@if [ `uname -s` = "Darwin" ]; then \
+		echo "--- Check 7: ACL ACE entry copied (MacOS)"; \
+		ls -le t/d/f.txt | fgrep 'user:root allow read' && echo "--> OK"; \
+	 fi
 
 
 check-8: check-4
