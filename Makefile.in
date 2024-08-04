@@ -93,8 +93,8 @@ check-4: setup-check
 	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAp  t/s t/d && echo "--> OK"
 
 check-5: check-4
-	@echo ""; echo "--- Check 5: ls -alR"
-	@(cd t/s ; ls -alR .) >/tmp/pxcp-s.out && (cd t/d ; ls -alR .) >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
+	@echo ""; echo "--- Check 5: ls -lR"
+	@(cd t/s ; ls -lR .) >/tmp/pxcp-s.out && (cd t/d ; ls -lR .) >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
 
 check-6: check-4
 	@echo ""; echo "--- Check 6: File Content"
