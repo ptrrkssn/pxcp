@@ -61,8 +61,8 @@ distclean: clean
 
 # Check targets
 setup-check-acl:
-	@if [ `uname -s` = "Linux" ]; then \
-		if [ `df --output=fstype t/s/f.txt | tail -1` = "nfs4" ]; then \
+	@if [ "`uname -s`" = "Linux" ]; then \
+		if [ "`df --output=fstype t/s/f.txt | tail -1`" = "nfs4" ]; then \
 			nfs4_setfacl -a A::root:r t/s/f.txt; \
 		else \
 			setfacl -m root:r t/s/f.txt; \
@@ -102,8 +102,8 @@ check-6: check-4
 
 check-7: check-4
 	@echo ""; echo "--- Check 7: ACL ACE entry copied"
-	@if [ `uname -s` = "Linux" ]; then \
-		if `df --output=fstype t/s/f.txt|tail -1` = "nfs4" ]; then \
+	@if [ "`uname -s`" = "Linux" ]; then \
+		if [ "`df --output=fstype t/s/f.txt|tail -1`" = "nfs4" ]; then \
 			nfs4_getfacl t/s/f.txt | grep '^A::root@.*:r$$' && echo "--> OK"; \
 		else \
 			getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
