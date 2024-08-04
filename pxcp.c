@@ -257,30 +257,55 @@ file_clone(FSOBJ *src,
 #if defined(HAVE_MKOSTEMPSAT)
     strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
     tmpname = tmppath;
-    tfd = mkostempsat(dst->parent->fd, tmpname, 0,
-                          f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
+    {
+	int f = f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0;
+	tfd = mkostempsat(dst->parent->fd, tmpname, 0, f);
+	if (f_debug > 1)
+	    fprintf(stderr, "** file_clone(%s,%s): mkostempat(%d, %s, 0, 0x%x [%s]) -> %d (%s)\n",
+		    fsobj_path(src), fsobj_path(dst),
+		    dst->parent->fd, tmppath, f, _fsobj_open_flagS(f),
+		    tfd, tfd < 0 ? strerror(errno) : "");
+    }
 #elif defined(HAVE_MKOSTEMP)
     sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
     tmpname = strrchr(tmppath, '/');
     if (tmpname)
         ++tmpname;
-    tfd = mkostemp(tmppath,
-                   f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
+
+    tfd = mkostemp(tmppath, 0);
+    if (f_debug > 1)
+	fprintf(stderr, "** file_clone(%s,%s): mkostemp(%s, 0) -> %d (%s)\n",
+		    fsobj_path(src), fsobj_path(dst),
+		    tmppath,
+		    tfd, tfd < 0 ? strerror(errno) : "");
 #elif defined(HAVE_MKSTEMP)
     sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
     tmpname = strrchr(tmppath, '/');
     if (tmpname)
         ++tmpname;
     tfd = mkstemp(tmppath);
+    if (f_debug > 1)
+      fprintf(stderr, "** file_clone(%s,%s): mkstemp(%s) -> %d (%s)\n",
+              fsobj_path(src), fsobj_path(dst),
+	      tmppath,
+	      tfd, tfd < 0 ? strerror(errno) : "");
 #else
     int n = 0;
     do {
+	int f = O_CREAT|O_WRONLY|O_EXCL|(f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
+
         sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
-        tfd = openat(dst->parent->fd, tmpname,
-                     O_CREAT|O_WRONLY|O_EXCL|
-                     (f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0),
-                     0400);
+        tfd = openat(dst->parent->fd, tmpname, f, 0400);
     } while (tfd < 0 && errno == EEXIST && n < 5);
+
+    if (f_debug > 1) {
+      fprintf(stderr, "** file_clone(%s,%s): openat(%d,%s,0x%x[%s],0400) -> %d (%s)\n",
+	      fsobj_path(src), fsobj_path(dst), 
+	      dst->parent->fd, tmpname, f, _fsobj_open_flags(f),
+	      tfd, tfd < 0 ? strerror(errno) : "");
+      return -1;
+    }
+
     tmpname = tmppath;
 #endif
 
@@ -289,6 +314,7 @@ file_clone(FSOBJ *src,
               argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
       return -1;
     }
+
 
     if (f_mmap) {
         if (src->stat.st_size > 0) {

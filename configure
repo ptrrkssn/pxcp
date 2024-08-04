@@ -4982,6 +4982,15 @@ printf "%s\n" "#define HAVE_STRUCT_STAT_ST_MTIM_TV_SEC 1" >>confdefs.h
 
 fi
 
+ac_fn_c_check_member "$LINENO" "struct stat" "st_flags" "ac_cv_member_struct_stat_st_flags" "$ac_includes_default"
+if test "x$ac_cv_member_struct_stat_st_flags" = xyes
+then :
+
+printf "%s\n" "#define HAVE_STRUCT_STAT_ST_FLAGS 1" >>confdefs.h
+
+
+fi
+
 
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing acl_get_perm" >&5
 printf %s "checking for library containing acl_get_perm... " >&6; }
@@ -5236,6 +5245,12 @@ ac_fn_c_check_func "$LINENO" "chflagsat" "ac_cv_func_chflagsat"
 if test "x$ac_cv_func_chflagsat" = xyes
 then :
   printf "%s\n" "#define HAVE_CHFLAGSAT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "fchflags" "ac_cv_func_fchflags"
+if test "x$ac_cv_func_fchflags" = xyes
+then :
+  printf "%s\n" "#define HAVE_FCHFLAGS 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "lchflags" "ac_cv_func_lchflags"

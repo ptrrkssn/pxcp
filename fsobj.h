@@ -56,6 +56,11 @@
 #endif
 #endif
 
+#if !defined(HAVE_STRUCT_STAT_ST_MTIM_TV_SEC) && defined(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC)
+#define st_atim st_atimespec
+#define st_mtim st_mtimespec
+#endif
+
 #define FSOBJ_FD(op) (op ? op->fd : AT_FDCWD)
 
 
@@ -190,5 +195,8 @@ extern int
 fsobj_chflags(FSOBJ *op,
               const char *np,
               unsigned long flags);
+
+extern char *
+_fsobj_open_flags(int flags);
 
 #endif

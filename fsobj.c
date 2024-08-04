@@ -54,8 +54,8 @@ extern int f_debug;
 #endif
 
 
-static char *
-_open_flags(int flags) {
+char *
+_fsobj_open_flags(int flags) {
     static char buf[2048];
 
     if (flags&O_PATH)
@@ -80,10 +80,22 @@ _open_flags(int flags) {
         strcat(buf, ",CREAT");
     if (flags&O_DIRECTORY)
         strcat(buf, ",DIRECTORY");
+    if (flags&O_EXCL)
+	strcat(buf, ",EXCL");
+    if (flags&O_SYNC)
+	strcat(buf, ",SYNC");
+#ifdef O_DIRECT
+    if (flags&O_DIRECT)
+	strcat(buf, ",DIRECT");
+#endif
+#ifdef O_RESOLVE_BENEATH
     if (flags&O_RESOLVE_BENEATH)
         strcat(buf, ",RESOLVE_BENEATH");
+#endif
+#ifdef O_EMPTY_PATH
     if (flags&O_EMPTY_PATH)
         strcat(buf, ",EMPTY_PATH");
+#endif
 #ifdef O_SYMLINK
     if (flags&O_SYMLINK)
         strcat(buf, ",SYMLINK");
@@ -319,13 +331,13 @@ fsobj_open(FSOBJ *op,
     }
 
 #ifdef HAVE_OPENAT
-    fd = openat(FSOBJ_FD(dirp), name, flags|O_NOFOLLOW, mode);
+    fd = openat(FSOBJ_FD(dirp), name, (flags&O_PATH) != 0 ? flags : flags|O_NOFOLLOW, mode);
     if (f_debug)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%s) [op=%p, flags=%s]\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
                 FSOBJ_FD(dirp), name, flags|O_NOFOLLOW, mode,
                 fd, fd < 0 ? strerror(errno) : "", op,
-                _open_flags(flags));
+                _fsobj_open_flags(flags));
 #else
     path = strdupcat(fsobj_path(dirp), "/", name, NULL);
     if (!path)
@@ -534,7 +546,7 @@ fsobj_reopen(FSOBJ *op,
                 fsobj_path(op), flags,
                 op->fd, flags, 
                 nfd, nfd < 0 ? strerror(errno) : "",
-                _open_flags(flags));
+                _fsobj_open_flags(flags));
     goto End;
 #else
     if (op->parent && op->parent->fd < 0) {
@@ -810,10 +822,11 @@ fsobj_delete(FSOBJ *op,
 
     if (op == dirp || !S_ISDIR(op->stat.st_mode)) {
         rc = unlink(path);
-        fprintf(stderr, "** fsobj_delete(%s, %s): unlink(%s) -> %d (%s)\n",
-                fsobj_path(op), np ? np : "NULL",
-                path,
-                rc, rc < 0 ? strerror(errno) : "");
+	if (f_debug > 1)
+	    fprintf(stderr, "** fsobj_delete(%s, %s): unlink(%s) -> %d (%s)\n",
+		    fsobj_path(op), np ? np : "NULL",
+		    path,
+		    rc, rc < 0 ? strerror(errno) : "");
         if (!rc || (rc < 0 && errno != EISDIR))
           goto End;
     }
@@ -1140,7 +1153,7 @@ fsobj_chmod(FSOBJ *op,
                     fsobj_path(op), op, np ? np : "NULL", mode,
                     op->fd, mode,
                     rc, rc < 0 ? strerror(errno) : "",
-                    op->flags, _open_flags(op->flags));
+                    op->flags, _fsobj_open_flags(op->flags));
         if (rc < 0 && errno == EBADF) {
             char buf[256];
 
@@ -1769,8 +1782,8 @@ fsobj_chflags(FSOBJ *op,
     rc = lchflags(path, flags);
     if (f_debug > 1)
         fprintf(stderr, "** fsobj_chflags(%s, %s, 0x%lx): lchflags(%s, 0x%lx) -> %d (%s)\n",
-                fsobj_path(op), np ? np : "NULL", mode,
-                path, mode,
+                fsobj_path(op), np ? np : "NULL", flags,
+                path, flags,
                 rc, rc < 0 ? strerror(errno) : "");
 #else
     errno = ENOSYS;

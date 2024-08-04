@@ -110,7 +110,8 @@ check-7: check-4
 		fi \
 	 fi
 	@if [ `uname -s` = "FreeBSD" ]; then getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; fi
-	@if [ `uname -s` = "Darwin" ];  then getfacl t/s/f.txt | fgrep 'user:root:r--' && echo "--> OK"; fi
+	@if [ `uname -s` = "Darwin" ];  then ls -le t/s/f.txt | fgrep 'user:root allow read' && echo "--> OK"; fi
+
 
 check-8: check-4
 	@echo ""; echo "--- Check 8: Cloning t/e -> t/d (with purge)"
