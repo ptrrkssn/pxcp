@@ -1517,7 +1517,7 @@ main(int argc,
     fsobj_init(&root_dst);
 
     if (i >= argc) {
-	fprintf(stderr, "%s: Error: Missing required <source> arguments\n",
+	fprintf(stderr, "%s: Error: Missing required <source> argument\n",
 		argv[0]);
         rc = 1;
         goto Fail;
