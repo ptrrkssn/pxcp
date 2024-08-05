@@ -94,33 +94,34 @@ struct timespec t0, t1;
 
 struct options {
     char c;
+    char *l;
     int *vp;
     char *help;
 } options[] = {
-    { 'a', &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
-    { 'd', &f_maxdepth,  "Max recursive depth" },
-    { 'e', &f_exist,     "Only copy to existing targets" },
-    { 'f', &f_force,     "Force updates" },
-    { 'g', &f_groups,    "Copy object group" },
-    { 'h', NULL,         "Display usage information" },
-    { 'i', &f_ignore,    "Ignore non-fatal errors and continue" },
-    { 'm', &f_metaonly,  "Only copy metadata" },
-    { 'n', &f_dryrun,    "Enable dry-run mode" },
-    { 'o', &f_owners,    "Copy object owner" },
-    { 'p', &f_prune,     "Prune removed objects" },
-    { 'r', &f_recurse,   "Enable recursion" },
-    { 's', &f_sync,      "Set sync mode" },
-    { 't', &f_times,     "Copy modfication times" },
-    { 'v', &f_verbose,   "Set verbosity level" },
-    { 'w', &f_warnings,  "Display warnings/notices" },
-    { 'x', &f_noxdev,    "Do not cross filesystems" },
-    { 'A', &f_acls,      "Copy ACLs" },
-    { 'D', &f_debug,     "Set debugging level" },
-    { 'F', &f_flags,     "Copy object flags" },
-    { 'M', &f_mmap,      "Use mmap(2)" },
-    { 'S', &f_stats,     "Print stats summary" },
-    { 'X', &f_xattrs,    "Copy Extended Attributes" },
-    { -1,  NULL,         NULL }
+    { 'a', "all",      &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
+    { 'd', "depth",    &f_maxdepth,  "Max recursive depth" },
+    { 'e', "exist",    &f_exist,     "Only copy to existing targets" },
+    { 'f', "force",    &f_force,     "Force updates" },
+    { 'g', "groups",   &f_groups,    "Copy object group" },
+    { 'h', "help",     NULL,         "Display usage information" },
+    { 'i', "ignore",   &f_ignore,    "Ignore non-fatal errors and continue" },
+    { 'm', "metaonly", &f_metaonly,  "Only copy metadata" },
+    { 'n', "dryrun",   &f_dryrun,    "Enable dry-run mode" },
+    { 'o', "owners",   &f_owners,    "Copy object owner" },
+    { 'p', "prune",    &f_prune,     "Prune removed objects" },
+    { 'r', "recurse",  &f_recurse,   "Enable recursion" },
+    { 's', "sync",     &f_sync,      "Set sync mode" },
+    { 't', "times",    &f_times,     "Copy modfication times" },
+    { 'v', "verbose",  &f_verbose,   "Set verbosity level" },
+    { 'w', "warnings", &f_warnings,  "Display warnings/notices" },
+    { 'x', "xdev",     &f_noxdev,    "Stay in same filesystems" },
+    { 'A', "acls",     &f_acls,      "Copy ACLs" },
+    { 'D', "debug",    &f_debug,     "Set debugging level" },
+    { 'F', "flags",    &f_flags,     "Copy object flags" },
+    { 'M', "mmap",     &f_mmap,      "Use mmap(2)" },
+    { 'S', "stats",    &f_stats,     "Print stats summary" },
+    { 'X', "xattrs",   &f_xattrs,    "Copy Extended Attributes" },
+    { -1,  NULL,       NULL,         NULL }
 };
 
 char *argv0 = "pxcp";
@@ -1246,13 +1247,14 @@ clone(FSOBJ *src,
     switch (s_type) {
     case S_IFDIR:
         if (f_maxdepth && level > f_maxdepth) {
-	  fprintf(stderr, "*** clone: Maxdepth (%d) reached, not doing subdirectory\n",
-		    f_maxdepth);
-	  break;
+            if (f_debug)
+                fprintf(stderr, "*** clone: Maxdepth (%d) reached, not doing subdirectory\n",
+                        f_maxdepth);
+            break;
 	}
-	  
+        
         if (f_debug)
-	  fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n", level, f_maxdepth);
+            fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n", level, f_maxdepth);
  
 	fsobj_init(&s_obj);
         fsobj_init(&d_obj);
@@ -1472,6 +1474,22 @@ path2dirbase(char *path,
 }
 
 
+void
+usage(void) {
+    int k;
+
+    
+    printf("Usage:\n  %s [options] <src> <dst>\n\nOptions:\n", argv0);
+    for (k = 0; options[k].c != -1; k++)
+        printf("  -%c    --%-10s    %s\n",
+               options[k].c,
+               options[k].l,
+               options[k].help);
+    puts("\nAll options may optionally take a numeric argument (-v3 or --verbose=3).");
+    exit(0);
+}
+
+
 int
 main(int argc,
      char *argv[]) {
@@ -1487,7 +1505,79 @@ main(int argc,
     
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
         char *op, *cp = NULL;
-	
+
+        if (argv[i][1] == '-') {
+            /* --long[=val] option */
+            char *os, *vs;
+            int *vp, f_no = 0;
+            
+
+            os = argv[i]+2;
+            vs = strchr(os, '=');
+            if (vs)
+                *vs++ = '\0';
+
+            if (!vs && strncmp(os, "no-", 3) == 0) {
+                f_no = 1;
+                os += 3;
+            }
+            
+            for (k = 0; options[k].c != -1 && strcmp(options[k].l, os) != 0; ++k)
+                ;
+            if (options[k].c == -1) {
+                if (vs)
+                    *--vs = '=';
+		fprintf(stderr, "%s: Error: %s: Invalid switch\n",
+			argv[0], argv[i]);
+		exit(1);
+            }
+
+            vp = options[k].vp;
+	    if (!vp)
+                usage();
+            
+            if (!vs) {
+                if (f_no)
+                    *vp = 0;
+                else
+                    (*vp)++;
+            } else {
+                long v;
+                char *cp;
+                
+                v = strtol(vs, &cp, 0);
+                if (cp == vs) {
+                    *--vs = '=';
+                    fprintf(stderr, "%s: Error: %s: Missing or invalid switch value\n",
+                            argv[0], argv[i]);
+                    exit(1);
+                }
+
+                *vp = v;
+		if (*cp) {
+		  switch (tolower(*cp)) {
+		  case 'k':
+		    *vp *= 1000;
+		    break;
+		  case 'm':
+		    *vp *= 1000000;
+		    break;
+		  case 'g':
+		    *vp *= 1000000000;
+		    break;
+		  case 't':
+		    *vp *= 1000000000000;
+		    break;
+		  default:
+		    fprintf(stderr, "%s: Error: %s: Invalid number suffix\n",
+			    argv0, cp);
+		    exit(1);
+		  }
+		}
+            }
+            continue;
+        }
+        
 	for (op = argv[i]+1; op && *op; op = cp) {
 	    int *vp;
 	    long v;
@@ -1502,13 +1592,8 @@ main(int argc,
 	    }
 
 	    vp = options[k].vp;
-	    if (!vp) {
-		printf("Usage:\n  %s [options] <src> <dst>\n\nOptions:\n", argv0);
-		for (k = 0; options[k].c != -1; k++)
-		    printf("  -%c    %s\n", options[k].c, options[k].help);
-                puts("\nAll options may optionally take a numeric argument.");
-		exit(0);
-	    }
+	    if (!vp)
+                usage();
 
 	    v = strtol(op+1, &cp, 0);
 	    if (cp == op+1) {

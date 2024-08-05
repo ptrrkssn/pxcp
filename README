@@ -23,35 +23,38 @@ USAGE:
   ./pxcp [options] <src> <dst>
 
 Options:
-  -a    Archive mode (enables g,o,r,t,A,F,X options)
-  -d    Set debugging output level
-  -e    Only copy to existing targets
-  -f    Force updates
-  -g    Copy object group
-  -h    Display usage information
-  -i    Ignore non-fatal errors and continue
-  -m    Only copy metadata
-  -n    Enable dry-run mode
-  -o    Copy object owner
-  -p    Prune removed objects
-  -r    Enable recursion
-  -s    Set sync mode
-  -t    Copy modfication times
-  -v    Set verbosity level
-  -w    Display warnings/notices
-  -x    Do not cross filesystems
-  -A    Copy ACLs
-  -F    Copy file flags
-  -M    Use mmap(2)
-  -S    Print stats summary
-  -X    Copy Extended Attributes
+  -a    --all          Archive mode (enables c,g,o,r,t,A,X options)
+  -d    --depth        Max recursive depth
+  -e    --exist        Only copy to existing targets
+  -f    --force        Force updates
+  -g    --groups       Copy object group
+  -h    --help         Display usage information
+  -i    --ignore       Ignore non-fatal errors and continue
+  -m    --metaonly     Only copy metadata
+  -n    --dryrun       Enable dry-run mode
+  -o    --owners       Copy object owner
+  -p    --prune        Prune removed objects
+  -r    --recurse      Enable recursion
+  -s    --sync         Set sync mode
+  -t    --times        Copy modfication times
+  -v    --verbose      Set verbosity level
+  -w    --warnings     Display warnings/notices
+  -x    --noxdev       Do not cross filesystems
+  -A    --acls         Copy ACLs
+  -D    --debug        Set debugging level
+  -F    --flags        Copy object flags
+  -M    --mmap         Use mmap(2)
+  -S    --stats        Print stats summary
+  -X    --xattrs       Copy Extended Attributes
 
-All options may optionally take a numeric argument.
+All options may optionally take a numeric argument (-v3 or --verbose=3).
 
 
 EXAMPLES:
 	# pxcp -vap src-dir dst-dir
 	Verbose, Archive, and Prune (ie, mirror src-dir to dst-dir)
 
-	# pxdp -vam -t0 src-dir dst-dir
+	# pxcp -vam -t0 src-dir dst-dir
 	Verbose, Archive, Metadata only (do not touch file contents), disable clone timestamps
+
+        # pxcp --verbose=3 --times=0
