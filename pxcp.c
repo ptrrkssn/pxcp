@@ -98,7 +98,7 @@ struct options {
     int *vp;
     char *help;
 } options[] = {
-    { 'a', "all",      &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
+    { 'a', "all",      &f_all,       "Archive mode (enables c,g,o,r,t,A,F,X options)" },
     { 'd', "depth",    &f_maxdepth,  "Max recursive depth" },
     { 'e', "exist",    &f_exist,     "Only copy to existing targets" },
     { 'f', "force",    &f_force,     "Force updates" },
@@ -114,7 +114,7 @@ struct options {
     { 't', "times",    &f_times,     "Copy modfication times" },
     { 'v', "verbose",  &f_verbose,   "Set verbosity level" },
     { 'w', "warnings", &f_warnings,  "Display warnings/notices" },
-    { 'x', "xdev",     &f_noxdev,    "Stay in same filesystems" },
+    { 'x', "xdev",     &f_noxdev,    "Stay in same filesystem" },
     { 'A', "acls",     &f_acls,      "Copy ACLs" },
     { 'D', "debug",    &f_debug,     "Set debugging level" },
     { 'F', "flags",    &f_flags,     "Copy object flags" },

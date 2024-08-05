@@ -19,35 +19,37 @@ Handles various ACLs:
  EXTENDED (MacOS)
 
 
+
 USAGE:
   ./pxcp [options] <src> <dst>
 
 Options:
-  -a    --all          Archive mode (enables c,g,o,r,t,A,X options)
-  -d    --depth        Max recursive depth
-  -e    --exist        Only copy to existing targets
-  -f    --force        Force updates
-  -g    --groups       Copy object group
-  -h    --help         Display usage information
-  -i    --ignore       Ignore non-fatal errors and continue
-  -m    --metaonly     Only copy metadata
-  -n    --dryrun       Enable dry-run mode
-  -o    --owners       Copy object owner
-  -p    --prune        Prune removed objects
-  -r    --recurse      Enable recursion
-  -s    --sync         Set sync mode
-  -t    --times        Copy modfication times
-  -v    --verbose      Set verbosity level
-  -w    --warnings     Display warnings/notices
-  -x    --noxdev       Do not cross filesystems
-  -A    --acls         Copy ACLs
-  -D    --debug        Set debugging level
-  -F    --flags        Copy object flags
-  -M    --mmap         Use mmap(2)
-  -S    --stats        Print stats summary
-  -X    --xattrs       Copy Extended Attributes
+  -a    --all           Archive mode (enables c,g,o,r,t,A,X options)
+  -d    --depth         Max recursive depth
+  -e    --exist         Only copy to existing targets
+  -f    --force         Force updates
+  -g    --groups        Copy object group
+  -h    --help          Display usage information
+  -i    --ignore        Ignore non-fatal errors and continue
+  -m    --metaonly      Only copy metadata
+  -n    --dryrun        Enable dry-run mode
+  -o    --owners        Copy object owner
+  -p    --prune         Prune removed objects
+  -r    --recurse       Enable recursion
+  -s    --sync          Set sync mode
+  -t    --times         Copy modfication times
+  -v    --verbose       Set verbosity level
+  -w    --warnings      Display warnings/notices
+  -x    --xdev          Stay in same filesystem
+  -A    --acls          Copy ACLs
+  -D    --debug         Set debugging level
+  -F    --flags         Copy object flags
+  -M    --mmap          Use mmap(2)
+  -S    --stats         Print stats summary
+  -X    --xattrs        Copy Extended Attributes
 
 All options may optionally take a numeric argument (-v3 or --verbose=3).
+
 
 
 EXAMPLES:
@@ -57,4 +59,5 @@ EXAMPLES:
 	# pxcp -vam -t0 src-dir dst-dir
 	Verbose, Archive, Metadata only (do not touch file contents), disable clone timestamps
 
-        # pxcp --verbose=3 --times=0
+        # pxcp --verbose=3 --times=0 src-dir dst-dir
+
