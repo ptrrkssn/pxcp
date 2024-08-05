@@ -151,7 +151,7 @@ check-7b: check-4
 	 fi
 	@if [ `uname -s` = "Darwin" ]; then \
 		echo "--- Check 7: ACL ACE entry copied (MacOS)"; \
-		xattr -r pxcptest t/d/f.txt | fgrep 'Hello' && echo "--> OK"; \
+		xattr -p pxcptest t/d/f.txt | fgrep 'Hello' && echo "--> OK"; \
 	 fi
 
 check-8: check-4

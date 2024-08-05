@@ -1925,17 +1925,22 @@ fsobj_list_attrs(FSOBJ *op,
 	
 #elif HAVE_FLISTXATTR
 #ifdef XATTR_NOFOLLOW
-	rc = flistxattr(op->fd, data, nbytes, XATTR_NOFOLLOW);
+	rc = flistxattr(op->fd, data, nbytes, 0);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): flistxattr(%d, %p, %llu, XATTR_NOFOLLOW) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+                    op->fd, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
 #else
 	rc = flistxattr(op->fd, data, nbytes);
         if (rc < 0 && errno == EBADF && S_ISLNK(op->stat.st_mode))
           rc = 0;
-#endif
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): flistxattr(%d, %p, %llu) -> %d (%s)\n",
                     fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
                     op->fd, data, (long long unsigned) nbytes,
                     (int) rc, rc < 0 ? strerror(errno) : "");
+#endif
 #else
 	errno = ENOSYS;
 	rc = -1;
@@ -2053,7 +2058,7 @@ fsobj_get_attr(FSOBJ *op,
                     (int) rc, rc < 0 ? strerror(errno) : "");
 #elif HAVE_FGETXATTR
 #ifdef XATTR_NOFOLLOW
-	rc = fgetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
+	rc = fgetxattr(op->fd, an, data, nbytes, 0, 0);
 #else
 	rc = fgetxattr(op->fd, an, data, nbytes);
 #endif
@@ -2177,7 +2182,7 @@ fsobj_set_attr(FSOBJ *op,
                     (int) rc, rc < 0 ? strerror(errno) : "");
 #elif HAVE_FSETXATTR
 #ifdef XATTR_NOFOLLOW
-	rc = fsetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
+	rc = fsetxattr(op->fd, an, data, nbytes, 0, 0);
 #else
 	rc = fsetxattr(op->fd, an, data, nbytes, 0);
 #endif
