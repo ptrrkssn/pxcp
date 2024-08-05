@@ -51,6 +51,12 @@
 /* Define to 1 if you have the 'crc32_z' function. */
 #undef HAVE_CRC32_Z
 
+/* Define to 1 if you have the 'extattr_delete_fd' function. */
+#undef HAVE_EXTATTR_DELETE_FD
+
+/* Define to 1 if you have the 'extattr_delete_link' function. */
+#undef HAVE_EXTATTR_DELETE_LINK
+
 /* Define to 1 if you have the 'extattr_get_fd' function. */
 #undef HAVE_EXTATTR_GET_FD
 
@@ -90,6 +96,9 @@
 /* Define to 1 if you have the 'freadlink' function. */
 #undef HAVE_FREADLINK
 
+/* Define to 1 if you have the 'fremovexattr' function. */
+#undef HAVE_FREMOVEXATTR
+
 /* Define to 1 if you have the 'fsetxattr' function. */
 #undef HAVE_FSETXATTR
 
@@ -122,6 +131,9 @@
 
 /* Define to 1 if you have the 'llistxattr' function. */
 #undef HAVE_LLISTXATTR
+
+/* Define to 1 if you have the 'lremovexattr' function. */
+#undef HAVE_LREMOVEXATTR
 
 /* Define to 1 if you have the 'lsetxattr' function. */
 #undef HAVE_LSETXATTR
@@ -159,6 +171,9 @@
 
 /* Define to 1 if you have the 'readlinkat' function. */
 #undef HAVE_READLINKAT
+
+/* Define to 1 if you have the 'removexattr' function. */
+#undef HAVE_REMOVEXATTR
 
 /* Define to 1 if you have the 'renameat' function. */
 #undef HAVE_RENAMEAT

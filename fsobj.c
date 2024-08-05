@@ -1912,9 +1912,9 @@ fsobj_list_attrs(FSOBJ *op,
         rc = extattr_list_fd(op->fd, EXTATTR_NAMESPACE_USER, data, nbytes);
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): extattr_list_fd(%d, %p, %llu) -> %d (%s)\n",
-                    fsobj_path(op), np ? np : "NULL", data, nbytes,
-                    op->fd, data, nbytes,
-                    rc, rc < 0 ? strerror(errno) : "");
+                    fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+                    op->fd, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
 
 	/* Reformat the list of attribute names */
 	_attrlist_freebsd_to_nsbuf(data, rc);
@@ -2036,9 +2036,9 @@ fsobj_get_attr(FSOBJ *op,
         rc = extattr_get_fd(op->fd, EXTATTR_NAMESPACE_USER, an, data, nbytes);
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): extattr_get_fd(%d, %s, %p, %llu) -> %d (%s)\n",
-                    fsobj_path(op), np ? np : "NULL", an, data, nbytes,
-                    op->fd, an, data, nbytes,
-                    rc, rc < 0 ? strerror(errno) : "");
+                    fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+                    op->fd, an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
 #elif HAVE_FGETXATTR
 #ifdef XATTR_NOFOLLOW
 	rc = fgetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
@@ -2157,9 +2157,9 @@ fsobj_set_attr(FSOBJ *op,
         rc = extattr_set_fd(op->fd, EXTATTR_NAMESPACE_USER, an, data, nbytes);
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): extattr_set_fd(%d, %s, %p, %llu) -> %d (%s)\n",
-                    fsobj_path(op), np ? np : "NULL", an, data, nbytes,
-                    op->fd, an, data, nbytes,
-                    rc, rc < 0 ? strerror(errno) : "");
+                    fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+                    op->fd, an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
 #elif HAVE_FSETXATTR
 #ifdef XATTR_NOFOLLOW
 	rc = fsetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
@@ -2246,7 +2246,7 @@ ssize_t
 fsobj_delete_attr(FSOBJ *op,
 		  const char *np,
 		  const char *an) {
-    ssize_t rc = -1;
+    int rc = -1;
     const char *name;
     char *path = NULL;
     FSOBJ *dirp = NULL;

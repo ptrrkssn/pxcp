@@ -46,6 +46,7 @@ AC_CHECK_FUNCS([acl facl])
 AC_CHECK_FUNCS([extattr_list_fd extattr_list_link flistxattr llistxattr listxattr])
 AC_CHECK_FUNCS([extattr_get_fd extattr_get_link fgetxattr lgetxattr getxattr])
 AC_CHECK_FUNCS([extattr_set_fd extattr_set_link fsetxattr lsetxattr setxattr])
+AC_CHECK_FUNCS([extattr_delete_fd extattr_delete_link fremovexattr lremovexattr removexattr])
 
 AC_CHECK_FUNCS([utimensat futimens])
 AC_CHECK_FUNCS([fstatat fchownat openat renameat mkdirat fchmodat])

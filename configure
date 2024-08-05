@@ -5389,6 +5389,37 @@ then :
 
 fi
 
+ac_fn_c_check_func "$LINENO" "extattr_delete_fd" "ac_cv_func_extattr_delete_fd"
+if test "x$ac_cv_func_extattr_delete_fd" = xyes
+then :
+  printf "%s\n" "#define HAVE_EXTATTR_DELETE_FD 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "extattr_delete_link" "ac_cv_func_extattr_delete_link"
+if test "x$ac_cv_func_extattr_delete_link" = xyes
+then :
+  printf "%s\n" "#define HAVE_EXTATTR_DELETE_LINK 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "fremovexattr" "ac_cv_func_fremovexattr"
+if test "x$ac_cv_func_fremovexattr" = xyes
+then :
+  printf "%s\n" "#define HAVE_FREMOVEXATTR 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "lremovexattr" "ac_cv_func_lremovexattr"
+if test "x$ac_cv_func_lremovexattr" = xyes
+then :
+  printf "%s\n" "#define HAVE_LREMOVEXATTR 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "removexattr" "ac_cv_func_removexattr"
+if test "x$ac_cv_func_removexattr" = xyes
+then :
+  printf "%s\n" "#define HAVE_REMOVEXATTR 1" >>confdefs.h
+
+fi
+
 
 ac_fn_c_check_func "$LINENO" "utimensat" "ac_cv_func_utimensat"
 if test "x$ac_cv_func_utimensat" = xyes
