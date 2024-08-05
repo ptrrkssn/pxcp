@@ -75,5 +75,7 @@ AC_SEARCH_LIBS([MD5Init], [md], [], [
         
 AC_CHECK_FUNCS([adler32_z crc32_z MD5Init SKEIN256_Init SHA256_Init SHA384_Init SHA512_Init])
 
+AC_CHECK_FUNCS([Skein_256_Init])
+
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

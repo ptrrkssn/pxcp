@@ -100,19 +100,19 @@ typedef struct digest {
     uint8_t      xor8;
     uint32_t     crc32;
     uint32_t     adler32;
-#ifdef HAVE_MD5_H
+#ifdef HAVE_MD5INIT
     MD5_CTX      md5;
 #endif
-#ifdef HAVE_SKEIN_H
+#ifdef HAVE_SKEIN256_INIT
     SKEIN256_CTX skein256;
 #endif
-#ifdef HAVE_SHA256_H
+#ifdef HAVE_SHA256_INIT
     SHA256_CTX   sha256;
 #endif
-#ifdef HAVE_SHA384_H
+#ifdef HAVE_SHA384_INIT
     SHA384_CTX   sha384;
 #endif
-#ifdef HAVE_SHA512_H
+#ifdef HAVE_SHA512_INIT
     SHA512_CTX   sha512;
 #endif
   } ctx;

@@ -6108,6 +6108,14 @@ then :
 fi
 
 
+ac_fn_c_check_func "$LINENO" "Skein_256_Init" "ac_cv_func_Skein_256_Init"
+if test "x$ac_cv_func_Skein_256_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SKEIN_256_INIT 1" >>confdefs.h
+
+fi
+
+
 ac_config_files="$ac_config_files Makefile"
 
 cat >confcache <<\_ACEOF
