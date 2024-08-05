@@ -56,6 +56,9 @@ extern int f_debug;
 #include <sys/xattr.h>
 #endif
 
+#ifndef ENOATTR
+#define ENOATTR ENODATA
+#endif
 
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
@@ -1925,6 +1928,8 @@ fsobj_list_attrs(FSOBJ *op,
 	rc = flistxattr(op->fd, data, nbytes, XATTR_NOFOLLOW);
 #else
 	rc = flistxattr(op->fd, data, nbytes);
+        if (rc < 0 && errno == EBADF && S_ISLNK(op->stat.st_mode))
+          rc = 0;
 #endif
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): flistxattr(%d, %p, %llu) -> %d (%s)\n",
@@ -1972,6 +1977,8 @@ fsobj_list_attrs(FSOBJ *op,
 		fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
 		path, data, (long long unsigned) nbytes,
 		(int) rc, rc < 0 ? strerror(errno) : "");
+    if (rc < 0 && errno == EBADF && S_ISLNK(op->stat.st_mode))
+      rc = 0;
 
 #elif HAVE_LISTXATTR
     rc = listxattr(path, data, nbytes, XATTR_NOFOLLOW);
@@ -2172,7 +2179,7 @@ fsobj_set_attr(FSOBJ *op,
 #ifdef XATTR_NOFOLLOW
 	rc = fsetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
 #else
-	rc = fsetxattr(op->fd, an, data, nbytes);
+	rc = fsetxattr(op->fd, an, data, nbytes, 0);
 #endif
         if (f_debug > 1)
             fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): fsetxattr(%d, %s, %p, %llu) -> %d (%s)\n",
@@ -2210,7 +2217,7 @@ fsobj_set_attr(FSOBJ *op,
 		(int) rc, rc < 0 ? strerror(errno) : "");
 
 #elif HAVE_LSETXATTR
-    rc = lsetxattr(path, an, data, nbytes);
+    rc = lsetxattr(path, an, data, nbytes, 0);
     if (f_debug > 1)
 	fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): lsetxattr(%s, %s, %p, %llu) -> %d (%s)\n",
 		fsobj_path(op), np ? np : "NULL",
