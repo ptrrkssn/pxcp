@@ -21,10 +21,12 @@ Handles various ACLs:
 
 
 USAGE:
+
+Usage:
   ./pxcp [options] <src> <dst>
 
 Options:
-  -a    --all           Archive mode (enables c,g,o,r,t,A,X options)
+  -a    --all           Archive mode (enables c,g,o,r,t,A,F,T,X options)
   -d    --depth         Max recursive depth
   -e    --exist         Only copy to existing targets
   -f    --force         Force updates
@@ -37,15 +39,17 @@ Options:
   -p    --prune         Prune removed objects
   -r    --recurse       Enable recursion
   -s    --sync          Set sync mode
-  -t    --times         Copy modfication times
+  -t    --times         Only copy files if newer
   -v    --verbose       Set verbosity level
   -w    --warnings      Display warnings/notices
   -x    --xdev          Stay in same filesystem
   -A    --acls          Copy ACLs
+  -C    --checksum      Only copy files if checksum differs
   -D    --debug         Set debugging level
   -F    --flags         Copy object flags
   -M    --mmap          Use mmap(2)
-  -S    --stats         Print stats summary
+  -S    --sizes         Copy only objects with changed size
+  -T    --timestamps    Copy timestamps
   -X    --xattrs        Copy Extended Attributes
 
 All options may optionally take a numeric argument (-v3 or --verbose=3).
