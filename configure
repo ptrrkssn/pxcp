@@ -4716,6 +4716,43 @@ then :
 
 fi
 
+ac_fn_c_check_header_compile "$LINENO" "zlib.h" "ac_cv_header_zlib_h" "$ac_includes_default"
+if test "x$ac_cv_header_zlib_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_ZLIB_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "md5.h" "ac_cv_header_md5_h" "$ac_includes_default"
+if test "x$ac_cv_header_md5_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_MD5_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "skein.h" "ac_cv_header_skein_h" "$ac_includes_default"
+if test "x$ac_cv_header_skein_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SKEIN_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "sha256.h" "ac_cv_header_sha256_h" "$ac_includes_default"
+if test "x$ac_cv_header_sha256_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA256_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "sha384.h" "ac_cv_header_sha384_h" "$ac_includes_default"
+if test "x$ac_cv_header_sha384_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA384_H 1" >>confdefs.h
+
+fi
+ac_fn_c_check_header_compile "$LINENO" "sha512.h" "ac_cv_header_sha512_h" "$ac_includes_default"
+if test "x$ac_cv_header_sha512_h" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA512_H 1" >>confdefs.h
+
+fi
+
 
 # Checks for typedefs, structures, and compiler characteristics.
 ac_fn_c_check_type "$LINENO" "uid_t" "ac_cv_type_uid_t" "$ac_includes_default"
@@ -5065,6 +5102,7 @@ then :
 
 fi
 
+
 ac_fn_c_check_func "$LINENO" "acl_get_brand_np" "ac_cv_func_acl_get_brand_np"
 if test "x$ac_cv_func_acl_get_brand_np" = xyes
 then :
@@ -5334,6 +5372,535 @@ esac
 fi
 rm -f core conftest.err conftest.$ac_objext conftest.beam \
     conftest$ac_exeext conftest.$ac_ext
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing adler32_z" >&5
+printf %s "checking for library containing adler32_z... " >&6; }
+if test ${ac_cv_search_adler32_z+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char adler32_z (void);
+int
+main (void)
+{
+return adler32_z ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' z
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_adler32_z=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_adler32_z+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_adler32_z+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_adler32_z=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_adler32_z" >&5
+printf "%s\n" "$ac_cv_search_adler32_z" >&6; }
+ac_res=$ac_cv_search_adler32_z
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing crc32_z" >&5
+printf %s "checking for library containing crc32_z... " >&6; }
+if test ${ac_cv_search_crc32_z+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char crc32_z (void);
+int
+main (void)
+{
+return crc32_z ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' z
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_crc32_z=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_crc32_z+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_crc32_z+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_crc32_z=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_crc32_z" >&5
+printf "%s\n" "$ac_cv_search_crc32_z" >&6; }
+ac_res=$ac_cv_search_crc32_z
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
+ ;;
+esac
+fi
+
+
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing MD5Init" >&5
+printf %s "checking for library containing MD5Init... " >&6; }
+if test ${ac_cv_search_MD5Init+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char MD5Init (void);
+int
+main (void)
+{
+return MD5Init ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' md
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_MD5Init=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_MD5Init+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_MD5Init+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_MD5Init=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_MD5Init" >&5
+printf "%s\n" "$ac_cv_search_MD5Init" >&6; }
+ac_res=$ac_cv_search_MD5Init
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing SKEIN256_Init" >&5
+printf %s "checking for library containing SKEIN256_Init... " >&6; }
+if test ${ac_cv_search_SKEIN256_Init+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char SKEIN256_Init (void);
+int
+main (void)
+{
+return SKEIN256_Init ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' md
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_SKEIN256_Init=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_SKEIN256_Init+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_SKEIN256_Init+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_SKEIN256_Init=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_SKEIN256_Init" >&5
+printf "%s\n" "$ac_cv_search_SKEIN256_Init" >&6; }
+ac_res=$ac_cv_search_SKEIN256_Init
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+    { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing SHA256_Init" >&5
+printf %s "checking for library containing SHA256_Init... " >&6; }
+if test ${ac_cv_search_SHA256_Init+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char SHA256_Init (void);
+int
+main (void)
+{
+return SHA256_Init ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' md
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_SHA256_Init=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_SHA256_Init+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_SHA256_Init+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_SHA256_Init=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_SHA256_Init" >&5
+printf "%s\n" "$ac_cv_search_SHA256_Init" >&6; }
+ac_res=$ac_cv_search_SHA256_Init
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+      { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing SHA384_Init" >&5
+printf %s "checking for library containing SHA384_Init... " >&6; }
+if test ${ac_cv_search_SHA384_Init+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char SHA384_Init (void);
+int
+main (void)
+{
+return SHA384_Init ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' md
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_SHA384_Init=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_SHA384_Init+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_SHA384_Init+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_SHA384_Init=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_SHA384_Init" >&5
+printf "%s\n" "$ac_cv_search_SHA384_Init" >&6; }
+ac_res=$ac_cv_search_SHA384_Init
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+else case e in #(
+  e)
+        { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing SHA512_Init" >&5
+printf %s "checking for library containing SHA512_Init... " >&6; }
+if test ${ac_cv_search_SHA512_Init+y}
+then :
+  printf %s "(cached) " >&6
+else case e in #(
+  e) ac_func_search_save_LIBS=$LIBS
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+
+/* Override any GCC internal prototype to avoid an error.
+   Use char because int might match the return type of a GCC
+   builtin and then its argument prototype would still apply.
+   The 'extern "C"' is for builds by C++ compilers;
+   although this is not generally supported in C code supporting it here
+   has little cost and some practical benefit (sr 110532).  */
+#ifdef __cplusplus
+extern "C"
+#endif
+char SHA512_Init (void);
+int
+main (void)
+{
+return SHA512_Init ();
+  ;
+  return 0;
+}
+_ACEOF
+for ac_lib in '' md
+do
+  if test -z "$ac_lib"; then
+    ac_res="none required"
+  else
+    ac_res=-l$ac_lib
+    LIBS="-l$ac_lib  $ac_func_search_save_LIBS"
+  fi
+  if ac_fn_c_try_link "$LINENO"
+then :
+  ac_cv_search_SHA512_Init=$ac_res
+fi
+rm -f core conftest.err conftest.$ac_objext conftest.beam \
+    conftest$ac_exeext
+  if test ${ac_cv_search_SHA512_Init+y}
+then :
+  break
+fi
+done
+if test ${ac_cv_search_SHA512_Init+y}
+then :
+
+else case e in #(
+  e) ac_cv_search_SHA512_Init=no ;;
+esac
+fi
+rm conftest.$ac_ext
+LIBS=$ac_func_search_save_LIBS ;;
+esac
+fi
+{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_SHA512_Init" >&5
+printf "%s\n" "$ac_cv_search_SHA512_Init" >&6; }
+ac_res=$ac_cv_search_SHA512_Init
+if test "$ac_res" != no
+then :
+  test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+
+fi
+ ;;
+esac
+fi
+ ;;
+esac
+fi
+ ;;
+esac
+fi
+ ;;
+esac
+fi
+
+
+ac_fn_c_check_func "$LINENO" "adler32_z" "ac_cv_func_adler32_z"
+if test "x$ac_cv_func_adler32_z" = xyes
+then :
+  printf "%s\n" "#define HAVE_ADLER32_Z 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "crc32_z" "ac_cv_func_crc32_z"
+if test "x$ac_cv_func_crc32_z" = xyes
+then :
+  printf "%s\n" "#define HAVE_CRC32_Z 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "MD5Init" "ac_cv_func_MD5Init"
+if test "x$ac_cv_func_MD5Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_MD5INIT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "SKEIN256_Init" "ac_cv_func_SKEIN256_Init"
+if test "x$ac_cv_func_SKEIN256_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SKEIN256_INIT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "SHA256_Init" "ac_cv_func_SHA256_Init"
+if test "x$ac_cv_func_SHA256_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA256_INIT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "SHA384_Init" "ac_cv_func_SHA384_Init"
+if test "x$ac_cv_func_SHA384_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA384_INIT 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "SHA512_Init" "ac_cv_func_SHA512_Init"
+if test "x$ac_cv_func_SHA512_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SHA512_INIT 1" >>confdefs.h
+
+fi
 
 
 ac_config_files="$ac_config_files Makefile"

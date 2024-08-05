@@ -16,6 +16,7 @@ AC_PROG_MAKE_SET
 
 # Checks for header files.
 AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h sys/dirent.h sys/xattr.h])
+AC_CHECK_HEADERS([zlib.h md5.h skein.h sha256.h sha384.h sha512.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_UID_T
@@ -33,6 +34,7 @@ AC_CHECK_MEMBERS([struct stat.st_mtim.tv_sec])
 AC_CHECK_MEMBERS([struct stat.st_flags])
 
 AC_SEARCH_LIBS([acl_get_perm], [acl])
+
 AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np acl_get_entry])
 AC_CHECK_FUNCS([acl facl])
 
@@ -55,6 +57,16 @@ char buf[65536];]],[[getdirentries(0, buf, sizeof(buf), 0);]]
 AC_DEFINE([HAVE_GETDIRENTRIES], [1], [Define if getdirentries exists and is linkable.])],
 [AC_MSG_RESULT([no])])
 
+AC_SEARCH_LIBS([adler32_z], [z], [], [
+  AC_SEARCH_LIBS([crc32_z], [z])])
+  
+AC_SEARCH_LIBS([MD5Init], [md], [], [
+  AC_SEARCH_LIBS([SKEIN256_Init], [md], [], [
+    AC_SEARCH_LIBS([SHA256_Init], [md], [], [
+      AC_SEARCH_LIBS([SHA384_Init], [md], [], [
+        AC_SEARCH_LIBS([SHA512_Init], [md])])])])])
+        
+AC_CHECK_FUNCS([adler32_z crc32_z MD5Init SKEIN256_Init SHA256_Init SHA384_Init SHA512_Init])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

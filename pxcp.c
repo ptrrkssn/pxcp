@@ -54,6 +54,7 @@
 
 #include "acls.h"
 #include "fsobj.h"
+#include "digest.h"
 
 #ifdef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC
 #define st_mtim st_mtimespec
@@ -77,8 +78,11 @@ int f_warnings = 0;
 int f_silent = 0;
 int f_ignore = 0;
 int f_times = 0;
+int f_sizes = 0;
+int f_timestamps = 0;
 int f_owners = 0;
 int f_groups = 0;
+int f_checksum = 0;
 int f_acls = 0;
 int f_flags = 0;
 int f_xattrs = 0;
@@ -92,36 +96,65 @@ gid_t *my_groupv = NULL;
 
 struct timespec t0, t1;
 
+
+int
+get_int(char *start,
+          char **next) {
+    return strtol(start, next, 0);
+}
+
+int
+get_digest(char *start,
+           char **next) {
+    int v;
+
+    v = digest_str2type(start);
+    if (v < 0)
+        return get_int(start, next);
+    
+    if (v >= 0) {
+        while (*start)
+            ++start;
+    }
+
+    *next = start;
+    return v;
+}
+
+
 struct options {
     char c;
     char *l;
     int *vp;
+    int (*f)(char *start, char **next);
     char *help;
 } options[] = {
-    { 'a', "all",      &f_all,       "Archive mode (enables c,g,o,r,t,A,F,X options)" },
-    { 'd', "depth",    &f_maxdepth,  "Max recursive depth" },
-    { 'e', "exist",    &f_exist,     "Only copy to existing targets" },
-    { 'f', "force",    &f_force,     "Force updates" },
-    { 'g', "groups",   &f_groups,    "Copy object group" },
-    { 'h', "help",     NULL,         "Display usage information" },
-    { 'i', "ignore",   &f_ignore,    "Ignore non-fatal errors and continue" },
-    { 'm', "metaonly", &f_metaonly,  "Only copy metadata" },
-    { 'n', "dryrun",   &f_dryrun,    "Enable dry-run mode" },
-    { 'o', "owners",   &f_owners,    "Copy object owner" },
-    { 'p', "prune",    &f_prune,     "Prune removed objects" },
-    { 'r', "recurse",  &f_recurse,   "Enable recursion" },
-    { 's', "sync",     &f_sync,      "Set sync mode" },
-    { 't', "times",    &f_times,     "Copy modfication times" },
-    { 'v', "verbose",  &f_verbose,   "Set verbosity level" },
-    { 'w', "warnings", &f_warnings,  "Display warnings/notices" },
-    { 'x', "xdev",     &f_noxdev,    "Stay in same filesystem" },
-    { 'A', "acls",     &f_acls,      "Copy ACLs" },
-    { 'D', "debug",    &f_debug,     "Set debugging level" },
-    { 'F', "flags",    &f_flags,     "Copy object flags" },
-    { 'M', "mmap",     &f_mmap,      "Use mmap(2)" },
-    { 'S', "stats",    &f_stats,     "Print stats summary" },
-    { 'X', "xattrs",   &f_xattrs,    "Copy Extended Attributes" },
-    { -1,  NULL,       NULL,         NULL }
+    { 'a', "all",        &f_all,         get_int,     "Archive mode (enables c,g,o,r,t,A,F,T,X options)" },
+    { 'd', "depth",      &f_maxdepth,    get_int,     "Max recursive depth" },
+    { 'e', "exist",      &f_exist,       get_int,     "Only copy to existing targets" },
+    { 'f', "force",      &f_force,       get_int,     "Force updates" },
+    { 'g', "groups",     &f_groups,      get_int,     "Copy object group" },
+    { 'h', "help",       NULL,           NULL,        "Display usage information" },
+    { 'i', "ignore",     &f_ignore,      get_int,     "Ignore non-fatal errors and continue" },
+    { 'm', "metaonly",   &f_metaonly,    get_int,     "Only copy metadata" },
+    { 'n', "dryrun",     &f_dryrun,      get_int,     "Enable dry-run mode" },
+    { 'o', "owners",     &f_owners,      get_int,     "Copy object owner" },
+    { 'p', "prune",      &f_prune,       get_int,     "Prune removed objects" },
+    { 'r', "recurse",    &f_recurse,     get_int,     "Enable recursion" },
+    { 's', "sync",       &f_sync,        get_int,     "Set sync mode" },
+    { 't', "times",      &f_times,       get_int,     "Only copy files if newer" },
+    { 'v', "verbose",    &f_verbose,     get_int,     "Set verbosity level" },
+    { 'w', "warnings",   &f_warnings,    get_int,     "Display warnings/notices" },
+    { 'x', "xdev",       &f_noxdev,      get_int,     "Stay in same filesystem" },
+    { 'A', "acls",       &f_acls,        get_int,     "Copy ACLs" },
+    { 'C', "checksum",   &f_checksum,    get_digest,  "Only copy files if checksum differs" },
+    { 'D', "debug",      &f_debug,       get_int,     "Set debugging level" },
+    { 'F', "flags",      &f_flags,       get_int,     "Copy object flags" },
+    { 'M', "mmap",       &f_mmap,        get_int,     "Use mmap(2)" },
+    { 'S', "sizes",      &f_sizes,       get_int,     "Copy only objects with changed size" },
+    { 'T', "timestamps", &f_timestamps,  get_int,     "Copy timestamps" }, 
+    { 'X', "xattrs",     &f_xattrs,      get_int,     "Copy Extended Attributes" },
+    { -1,  NULL,         NULL,           NULL,        NULL }
 };
 
 char *argv0 = "pxcp";
@@ -170,11 +203,26 @@ in_grouplist(gid_t g) {
 
 
 int
-ts_isless(struct timespec *a,
-	  struct timespec *b) {
-    if (a->tv_sec == b->tv_sec)
-        return a->tv_nsec < b->tv_nsec;
-    return a->tv_sec < b->tv_sec;
+ts_check(struct timespec *a,
+         struct timespec *b,
+         int exact_check) {
+    int v;
+    
+    if (exact_check)
+        v = !(a->tv_sec == b->tv_sec && a->tv_nsec == b->tv_nsec);
+    else {
+        if (a->tv_sec == b->tv_sec)
+            v = a->tv_nsec < b->tv_nsec;
+        else
+            v = a->tv_sec < b->tv_sec;
+    }
+
+    if (f_debug > 1)
+        fprintf(stderr, "** ts_check(%s): %ld.%09ld vs %ld.%09ld -> %d [f_times=%d]\n",
+                exact_check ? "exact" : "newer",
+                a->tv_sec, a->tv_nsec, b->tv_sec, b->tv_nsec, v, f_times);
+    
+    return v;
 }
 
 
@@ -234,20 +282,34 @@ symlink_clone(FSOBJ *src,
 }
 
 
+
 ssize_t
 file_clone(FSOBJ *src,
            FSOBJ *dst) {
     ssize_t wr, rr, rc = 0;
-    char *bufp = MAP_FAILED;
+    unsigned char *s_bufp = MAP_FAILED;
+    unsigned char *d_bufp = MAP_FAILED;
     int tfd = -1;
     char tmppath[PATH_MAX], *tmpname = NULL;
+    int update_f = f_force;
 
 
-    /* Check if data is in need of cloning */
-    if (!f_force &&
-        src->stat.st_size == dst->stat.st_size &&
-        ts_isless(&src->stat.st_mtim, &dst->stat.st_mtim))
-	return 0;
+    if (!f_sizes && !f_times && !f_checksum && !f_metaonly)
+        update_f = 1;
+    
+    if (f_sizes && src->stat.st_size != dst->stat.st_size) {
+        if (f_debug > 1)
+            fprintf(stderr, "** file_clone(%s, %s): Sizes differs\n",
+                    fsobj_path(src), fsobj_path(dst));
+        update_f = 1;
+    }
+
+    if (f_times && ts_check(&dst->stat.st_mtim, &src->stat.st_mtim, f_times-1)) {
+        if (f_debug > 1)
+            fprintf(stderr, "** file_clone(%s, %s): Times differs\n",
+                    fsobj_path(src), fsobj_path(dst));
+        update_f = 1;
+    }
 
     /* Make sure object is opened for reading */
     if (fsobj_reopen(src, O_RDONLY|O_DIRECT) < 0) {
@@ -255,34 +317,93 @@ file_clone(FSOBJ *src,
                 argv0, fsobj_path(src), strerror(errno));
         return -1;
     }
+        
+    if (f_checksum) {
+        DIGEST s_digest, d_digest;
+        unsigned char s_digbuf[DIGEST_BUFSIZE_MAX];
+        unsigned char d_digbuf[DIGEST_BUFSIZE_MAX];
+        ssize_t s_rc = -1, d_rc = -1;
+        
 
-    if (f_dryrun)
+        if (!f_mmap)
+            f_mmap = 1;
+        
+        digest_init(&s_digest, f_checksum);
+        digest_init(&d_digest, f_checksum); 
+        
+        if (src->stat.st_size > 0) {
+            s_bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
+            if (s_bufp == MAP_FAILED) {
+                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+                        argv0, fsobj_path(src), strerror(errno));
+                rc = -1;
+                goto End;
+            }
+            
+            /* Ignore errors */
+            (void) madvise(s_bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+            
+            digest_update(&s_digest, s_bufp, src->stat.st_size);
+            s_rc = digest_final(&s_digest, s_digbuf, sizeof(s_digbuf));
+        }
+        
+        /* Make sure object is opened for reading */
+        if (fsobj_reopen(dst, O_RDONLY|O_DIRECT) < 0) {
+            fprintf(stderr, "%s: Error: %s: Reopening): %s\n",
+                    argv0, fsobj_path(dst), strerror(errno));
+            return -1;
+        }
+        
+        if (dst->stat.st_size > 0) {
+            d_bufp = mmap(NULL, dst->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, dst->fd, 0);
+            if (d_bufp == MAP_FAILED) {
+                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+                        argv0, fsobj_path(dst), strerror(errno));
+                rc = -1;
+                goto End;
+            }
+            
+            /* Ignore errors */
+            (void) madvise(d_bufp, dst->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+            digest_update(&d_digest, d_bufp, dst->stat.st_size);
+            d_rc = digest_final(&d_digest, d_digbuf, sizeof(d_digbuf));
+        }
+
+        if (s_rc >= 0 && s_rc == d_rc && memcmp(s_digbuf, d_digbuf, s_rc) != 0) {
+            if (f_debug > 1)
+                fprintf(stderr, "** file_clone(%s, %s): Digest differs\n",
+                        fsobj_path(src), fsobj_path(dst));
+            update_f = 1;
+        }
+    }
+
+    if (f_dryrun || !update_f)
         return 0;
-
+    
 #if defined(HAVE_MKOSTEMPSAT)
     strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
     tmpname = tmppath;
     {
-	int f = f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0;
-	tfd = mkostempsat(dst->parent->fd, tmpname, 0, f);
-	if (f_debug > 1)
-	    fprintf(stderr, "** file_clone(%s,%s): mkostempat(%d, %s, 0, 0x%x [%s]) -> %d (%s)\n",
-		    fsobj_path(src), fsobj_path(dst),
-		    dst->parent->fd, tmppath, f, _fsobj_open_flags(f),
-		    tfd, tfd < 0 ? strerror(errno) : "");
+        int f = f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0;
+        tfd = mkostempsat(dst->parent->fd, tmpname, 0, f);
+        if (f_debug > 1)
+            fprintf(stderr, "** file_clone(%s,%s): mkostempat(%d, %s, 0, 0x%x [%s]) -> %d (%s)\n",
+                    fsobj_path(src), fsobj_path(dst),
+                    dst->parent->fd, tmppath, f, _fsobj_open_flags(f),
+                    tfd, tfd < 0 ? strerror(errno) : "");
     }
 #elif defined(HAVE_MKOSTEMP)
     sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
     tmpname = strrchr(tmppath, '/');
     if (tmpname)
         ++tmpname;
-
+        
     tfd = mkostemp(tmppath, 0);
     if (f_debug > 1)
-	fprintf(stderr, "** file_clone(%s,%s): mkostemp(%s, 0) -> %d (%s)\n",
-		    fsobj_path(src), fsobj_path(dst),
-		    tmppath,
-		    tfd, tfd < 0 ? strerror(errno) : "");
+        fprintf(stderr, "** file_clone(%s,%s): mkostemp(%s, 0) -> %d (%s)\n",
+                fsobj_path(src), fsobj_path(dst),
+                tmppath,
+                tfd, tfd < 0 ? strerror(errno) : "");
 #elif defined(HAVE_MKSTEMP)
     sprintf(tmppath, "%s/.pxcp_tmpfile.XXXXXX", fsobj_path(dst->parent));
     tmpname = strrchr(tmppath, '/');
@@ -290,66 +411,67 @@ file_clone(FSOBJ *src,
         ++tmpname;
     tfd = mkstemp(tmppath);
     if (f_debug > 1)
-      fprintf(stderr, "** file_clone(%s,%s): mkstemp(%s) -> %d (%s)\n",
-              fsobj_path(src), fsobj_path(dst),
-	      tmppath,
-	      tfd, tfd < 0 ? strerror(errno) : "");
+        fprintf(stderr, "** file_clone(%s,%s): mkstemp(%s) -> %d (%s)\n",
+                fsobj_path(src), fsobj_path(dst),
+                tmppath,
+                tfd, tfd < 0 ? strerror(errno) : "");
 #else
     int n = 0;
     do {
-	int f = O_CREAT|O_WRONLY|O_EXCL|(f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
-
+        int f = O_CREAT|O_WRONLY|O_EXCL|(f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
+            
         sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
         tfd = openat(dst->parent->fd, tmpname, f, 0400);
     } while (tfd < 0 && errno == EEXIST && n < 5);
-
+        
     if (f_debug > 1) {
-      fprintf(stderr, "** file_clone(%s,%s): openat(%d,%s,0x%x[%s],0400) -> %d (%s)\n",
-	      fsobj_path(src), fsobj_path(dst), 
-	      dst->parent->fd, tmpname, f, _fsobj_open_flags(f),
-	      tfd, tfd < 0 ? strerror(errno) : "");
-      return -1;
+        fprintf(stderr, "** file_clone(%s,%s): openat(%d,%s,0x%x[%s],0400) -> %d (%s)\n",
+                fsobj_path(src), fsobj_path(dst), 
+                dst->parent->fd, tmpname, f, _fsobj_open_flags(f),
+                tfd, tfd < 0 ? strerror(errno) : "");
+        return -1;
     }
-
+        
     tmpname = tmppath;
 #endif
-
+        
     if (tfd < 0) {
-      fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
-              argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
-      return -1;
+        fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
+                argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
+        return -1;
     }
-
-
+        
+        
     if (f_mmap) {
         if (src->stat.st_size > 0) {
-            bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-            if (bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
-                        argv0, fsobj_path(src), strerror(errno));
-                rc = -1;
-                goto End;
+            if (s_bufp == MAP_FAILED) {
+                s_bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
+                if (s_bufp == MAP_FAILED) {
+                    fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+                            argv0, fsobj_path(src), strerror(errno));
+                    rc = -1;
+                    goto End;
+                }
+                /* Ignore errors */
+                (void) madvise(s_bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
             }
-        
-            /* Ignore errors */
-            (void) madvise(bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-
+                
             if (tfd >= 0) {
-                wr = write(tfd, bufp, src->stat.st_size);
+                wr = write(tfd, s_bufp, src->stat.st_size);
                 if (wr < 0) {
                     int t_errno = errno;
-                    
+                        
                     fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
                             argv0, fsobj_path(dst->parent), tmpname,
-                            tfd, bufp, (long long int) src->stat.st_size,
+                            tfd, s_bufp, (long long int) src->stat.st_size,
                             strerror(errno));
                     errno = t_errno;
                     rc = -1;
                     goto End;
                 }
-                
+                    
                 b_written += wr;
-                
+                    
                 if (wr != src->stat.st_size) {
                     fprintf(stderr, "%s: Error: %s/%s: Short write\n",
                             argv0, fsobj_path(dst->parent), tmpname);
@@ -357,39 +479,40 @@ file_clone(FSOBJ *src,
                     rc = -1;
                     goto End;
                 }
-                
+
+                rc = 1;
             }
         }
     } else {
         char buf[256*1024];
-      
+            
         if (ftruncate(tfd, src->stat.st_size) < 0) {
             int t_errno = errno;
-            
+                
             fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
                     argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
             errno = t_errno;
             rc = -1;
             goto End;
         }
-
+            
         while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
             wr = write(tfd, buf, rr);
             if (wr < 0) {
                 int t_errno = errno;
-            
+                    
                 fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
                         argv0, fsobj_path(dst->parent), tmpname,
                         tfd, buf, (long long int) rr,
                         strerror(errno));
-                
+                    
                 errno = t_errno;
                 rc = -1;
                 goto End;
             }
-
+                
             b_written += wr;
-            
+                
             if (wr != rr) {
                 fprintf(stderr, "%s: Error: %s/%s: Short write\n",
                         argv0, fsobj_path(dst->parent), tmpname);
@@ -397,26 +520,28 @@ file_clone(FSOBJ *src,
                 rc = -1;
                 goto End;
             }
-            
+                
         }
         if (rr < 0) {
             int t_errno = errno;
-
+                
             fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
                     argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
             errno = t_errno;
             rc = -1;
             goto End;
         }
-    }
 
-    if (dst->fd >= 0) {
-        int rc;
+        rc = 1;
+    }
         
-        rc = dup2(tfd, dst->fd);
+    if (dst->fd >= 0) {
+        int d_rc;
+            
+        d_rc = dup2(tfd, dst->fd);
         if (f_debug)
             fprintf(stderr, "** file_clone: dup2(%d, %d) -> %d\n",
-                    tfd, dst->fd, rc);
+                    tfd, dst->fd, d_rc);
         close(tfd);
     } else {
         dst->fd = tfd;
@@ -424,43 +549,45 @@ file_clone(FSOBJ *src,
             fprintf(stderr, "** file_clone: op->fd = %d\n",
                     tfd);
     }
-    
+        
     if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
         int t_errno = errno;
-      
+            
         fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
                 argv0,
                 fsobj_path(dst->parent), tmpname,
-              
+                    
                 fsobj_path(dst->parent), dst->name,
                 strerror(errno));
         errno = t_errno;
         rc = -1;
         goto End;
     }
-
+        
     tmpname = NULL;
-
+        
     if (fsobj_reopen(dst, O_RDONLY) < 0) {
-      int t_errno = errno;
-      
-      fprintf(stderr, "%s: Error: %s: Reopening: %s\n",
-              argv0, fsobj_path(dst), strerror(errno));
-      errno = t_errno;
-      rc = -1;
-      goto End;
+        int t_errno = errno;
+            
+        fprintf(stderr, "%s: Error: %s: Reopening: %s\n",
+                argv0, fsobj_path(dst), strerror(errno));
+        errno = t_errno;
+        rc = -1;
+        goto End;
     }
-          
-
+        
+        
  End:
-    if (bufp)
-        munmap(bufp, src->stat.st_size);
+    if (s_bufp)
+        munmap(s_bufp, src->stat.st_size);
+    if (d_bufp)
+        munmap(d_bufp, dst->stat.st_size);
     if (tfd >= 0)
         close(tfd);
     if (tmpname)
         (void) unlinkat(dst->parent->fd, tmpname, 0);
 
-    return rc;
+    return rc <= 0 ? rc : 1;
 }
 
 
@@ -1087,7 +1214,7 @@ times_clone(FSOBJ *src,
     int rc = 0;
 
 #if HAVE_STRUCT_STAT_ST_BIRTHTIM_TV_SEC
-    if (f_force || ts_isless(&dst->stat.st_birthtim, &src->stat.st_birthtim)) {
+    if (f_force || ts_check(&dst->stat.st_birthtim, &src->stat.st_birthtim, 1)) {
 	if (!f_dryrun) {
 	    struct timespec times[2];
 
@@ -1104,7 +1231,7 @@ times_clone(FSOBJ *src,
         rc = 1;
     }
 #endif
-    if (f_force || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
+    if (f_force || ts_check(&dst->stat.st_mtim, &src->stat.st_mtim, 1)) {
 	if (!f_dryrun) {
 	    struct timespec times[2];
 
@@ -1342,17 +1469,14 @@ clone(FSOBJ *src,
     case S_IFREG:
         if (f_debug)
             fprintf(stderr, "*** clone: Doing file\n");
-        if (f_force || src->stat.st_size != dst->stat.st_size || ts_isless(&dst->stat.st_mtim, &src->stat.st_mtim)) {
-            if (!f_dryrun) {
-                rc = file_clone(src, dst);
-                if (rc < 0) {
-                    if (f_ignore)
-                        goto End;
-                    return -1;
-                }
-            }
-            mdiff |= MD_DATA;
+        rc = file_clone(src, dst);
+        if (rc < 0) {
+            if (f_ignore)
+                goto End;
+            return -1;
         }
+        if (rc > 0) 
+            mdiff |= MD_DATA;
         break;
 
     case S_IFLNK:
@@ -1414,7 +1538,7 @@ clone(FSOBJ *src,
             mdiff |= MD_FLAG;
     }
 
-    if (f_times) {
+    if (f_timestamps) {
         rc = times_clone(src, dst);
         if (rc < 0 && !f_ignore)
             return -1;
@@ -1545,7 +1669,7 @@ main(int argc,
                 long v;
                 char *cp;
                 
-                v = strtol(vs, &cp, 0);
+                v = (*options[k].f)(vs, &cp);
                 if (cp == vs) {
                     *--vs = '=';
                     fprintf(stderr, "%s: Error: %s: Missing or invalid switch value\n",
@@ -1590,38 +1714,39 @@ main(int argc,
 			argv[0], *op);
 		exit(1);
 	    }
-
-	    vp = options[k].vp;
-	    if (!vp)
+            
+	    if (!options[k].vp)
                 usage();
 
-	    v = strtol(op+1, &cp, 0);
-	    if (cp == op+1) {
-	      (*vp)++;
-	    }
-	    else {
-	        *vp = v;
-
-		if (*cp) {
-		  switch (tolower(*cp)) {
-		  case 'k':
-		    *vp *= 1000;
-		    break;
-		  case 'm':
-		    *vp *= 1000000;
-		    break;
-		  case 'g':
-		    *vp *= 1000000000;
-		    break;
-		  case 't':
-		    *vp *= 1000000000000;
-		    break;
-		  default:
-		    fprintf(stderr, "%s: Error: %s: Invalid number suffix\n",
-			    argv0, cp);
-		    exit(1);
-		  }
-		  ++cp;
+            vp = (int *) options[k].vp;
+                
+            v = (*options[k].f)(op+1, &cp);
+            if (cp == op+1) {
+                (*vp)++;
+            }
+            else {
+                *vp = v;
+                
+                if (*cp) {
+                    switch (tolower(*cp)) {
+                    case 'k':
+                        *vp *= 1000;
+                        break;
+                    case 'm':
+                        *vp *= 1000000;
+                        break;
+                    case 'g':
+                        *vp *= 1000000000;
+                        break;
+                    case 't':
+                        *vp *= 1000000000000;
+                        break;
+                    default:
+                        fprintf(stderr, "%s: Error: %s: Invalid number suffix\n",
+                                argv0, cp);
+                        exit(1);
+                    }
+                    ++cp;
 		}
 		op = cp;
 	    }
@@ -1633,13 +1758,14 @@ main(int argc,
 	       PACKAGE_STRING);
 
     if (f_all) {
-	f_owners  += f_all;
-	f_groups  += f_all;
-	f_recurse += f_all;
-	f_times   += f_all;
-	f_acls    += f_all;
-	f_xattrs  += f_all;
-	f_flags   += f_all;
+	f_owners     += f_all;
+	f_groups     += f_all;
+	f_recurse    += f_all;
+	f_times      += f_all;
+	f_acls       += f_all;
+	f_xattrs     += f_all;
+	f_flags      += f_all;
+        f_timestamps += f_all;
     }
 
     if (f_groups && geteuid() != 0) {

@@ -42,8 +42,14 @@
 /* Define to 1 if you have the 'acl_set_link_np' function. */
 #undef HAVE_ACL_SET_LINK_NP
 
+/* Define to 1 if you have the 'adler32_z' function. */
+#undef HAVE_ADLER32_Z
+
 /* Define to 1 if you have the 'chflagsat' function. */
 #undef HAVE_CHFLAGSAT
+
+/* Define to 1 if you have the 'crc32_z' function. */
+#undef HAVE_CRC32_Z
 
 /* Define to 1 if you have the 'extattr_get_fd' function. */
 #undef HAVE_EXTATTR_GET_FD
@@ -94,6 +100,12 @@
    to 0 otherwise. */
 #undef HAVE_MALLOC
 
+/* Define to 1 if you have the 'MD5Init' function. */
+#undef HAVE_MD5INIT
+
+/* Define to 1 if you have the <md5.h> header file. */
+#undef HAVE_MD5_H
+
 /* Define to 1 if you have the <minix/config.h> header file. */
 #undef HAVE_MINIX_CONFIG_H
 
@@ -120,6 +132,30 @@
 
 /* Define to 1 if you have the 'renameat' function. */
 #undef HAVE_RENAMEAT
+
+/* Define to 1 if you have the <sha256.h> header file. */
+#undef HAVE_SHA256_H
+
+/* Define to 1 if you have the 'SHA256_Init' function. */
+#undef HAVE_SHA256_INIT
+
+/* Define to 1 if you have the <sha384.h> header file. */
+#undef HAVE_SHA384_H
+
+/* Define to 1 if you have the 'SHA384_Init' function. */
+#undef HAVE_SHA384_INIT
+
+/* Define to 1 if you have the <sha512.h> header file. */
+#undef HAVE_SHA512_H
+
+/* Define to 1 if you have the 'SHA512_Init' function. */
+#undef HAVE_SHA512_INIT
+
+/* Define to 1 if you have the 'SKEIN256_Init' function. */
+#undef HAVE_SKEIN256_INIT
+
+/* Define to 1 if you have the <skein.h> header file. */
+#undef HAVE_SKEIN_H
 
 /* Define to 1 if you have the <stdint.h> header file. */
 #undef HAVE_STDINT_H
@@ -180,6 +216,9 @@
 
 /* Define to 1 if you have the <wchar.h> header file. */
 #undef HAVE_WCHAR_H
+
+/* Define to 1 if you have the <zlib.h> header file. */
+#undef HAVE_ZLIB_H
 
 /* Define to the address where bug reports for this package should be sent. */
 #undef PACKAGE_BUGREPORT
