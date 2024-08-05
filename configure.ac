@@ -43,13 +43,14 @@ AC_SEARCH_LIBS([acl_get_perm], [acl])
 AC_CHECK_FUNCS([acl_get_brand_np acl_get_fd_np acl_get_fd acl_get_file acl_get_link_np acl_set_fd_np acl_set_fd acl_set_file acl_set_link_np acl_get_perm acl_get_perm_np acl_get_entry])
 AC_CHECK_FUNCS([acl facl])
 
-AC_CHECK_FUNCS([extattr_get_fd extattr_set_fd])
-AC_CHECK_FUNCS([fgetxattr fsetxattr])
+AC_CHECK_FUNCS([extattr_list_fd extattr_list_link flistxattr llistxattr listxattr])
+AC_CHECK_FUNCS([extattr_get_fd extattr_get_link fgetxattr lgetxattr getxattr])
+AC_CHECK_FUNCS([extattr_set_fd extattr_set_link fsetxattr lsetxattr setxattr])
+
 AC_CHECK_FUNCS([utimensat futimens])
 AC_CHECK_FUNCS([fstatat fchownat openat renameat mkdirat fchmodat])
 AC_CHECK_FUNCS([funlinkat unlinkat])
 AC_CHECK_FUNCS([readlinkat freadlink symlinkat])
-dnl AC_CHECK_FUNCS([getdirentries])
 AC_CHECK_FUNCS([mkostempsat mkostemps mkostemp mkstemp])
 AC_CHECK_FUNCS([chflagsat fchflags lchflags])
 

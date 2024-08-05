@@ -49,6 +49,14 @@ extern int f_debug;
 #include <sys/types.h>
 #include <sys/time.h>
 
+#if HAVE_SYS_EXTATTR_H
+#include <sys/extattr.h>
+#endif
+#ifdef HAVE_SYS_XATTR_H
+#include <sys/xattr.h>
+#endif
+
+
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
 #endif
@@ -453,20 +461,17 @@ fsobj_path(FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
         abort();
 
-
     if (op->path)
 	return op->path;
 
     if (!op->name)
       return NULL;
       
-    tp = op;
+    
     for (tp = op; tp; tp = tp->parent) {
         char *name = tp->name;
 
         if (!tp->parent && name[1] == '\0') {
-	    if (name[0] == '.') 
-	        continue;
 	    if (name[0] == '/')
 	      name = "";
 	}
@@ -483,8 +488,6 @@ fsobj_path(FSOBJ *op) {
         char *name = tp->name;
 
         if (!tp->parent && name[1] == '\0') {
-	    if (name[0] == '.') 
-	        continue;
 	    if (name[0] == '/')
 	      name = "";
 	}
@@ -1840,4 +1843,507 @@ fsobj_chflags(FSOBJ *op,
     errno = ENOSYS;
     return -1;
 #endif
+}
+
+
+#ifdef HAVE_EXTATTR_LIST_FD
+static void
+_attrlist_freebsd_to_nsbuf(void *vp,
+			   size_t nbytes) {
+    unsigned char *abuf = (unsigned char *) vp;
+    unsigned char len;
+    
+    while (nbytes > 0) {
+	nbytes--; /* Eat name length */
+	for (len = *abuf; len-- > 0; abuf++) {
+	    *abuf = abuf[1];
+	    nbytes--;
+	}
+	*abuf++ = '\0';
+    }
+}
+#endif
+
+/*
+ * Get a list of Extended Attributes
+ *
+ * Arguments:
+ *  op       Object (name == NULL) or Directory
+ *  np       Name or NULL
+ *  mode     New mode bits
+ *
+ * Returns:
+ *   1       Updated
+ *   0       No update needed
+ *  -1       Something went wrong
+ */
+ssize_t
+fsobj_list_attrs(FSOBJ *op,
+		 const char *np,
+		 void *data,
+		 size_t nbytes) {
+    ssize_t rc = -1;
+    const char *name;
+    char *path = NULL;
+    FSOBJ *dirp = NULL;
+
+    
+    if (!op && !np)
+        abort();
+
+    if (op && op->magic != FSOBJ_MAGIC)
+        abort();
+    
+    if (np) {
+        dirp = op;
+        name = np;
+    } else {
+        dirp = op->parent;
+        name = op->name;
+    }
+    
+    if (dirp && !S_ISDIR(dirp->stat.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    
+    if (op != dirp && op->fd >= 0) {
+#if HAVE_EXTATTR_LIST_FD
+        rc = extattr_list_fd(op->fd, EXTATTR_NAMESPACE_USER, data, nbytes);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): extattr_list_fd(%d, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", data, nbytes,
+                    op->fd, data, nbytes,
+                    rc, rc < 0 ? strerror(errno) : "");
+
+	/* Reformat the list of attribute names */
+	_attrlist_freebsd_to_nsbuf(data, rc);
+	
+#elif HAVE_FLISTXATTR
+#ifdef XATTR_NOFOLLOW
+	rc = flistxattr(op->fd, data, nbytes, XATTR_NOFOLLOW);
+#else
+	rc = flistxattr(op->fd, data, nbytes);
+#endif
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): flistxattr(%d, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+                    op->fd, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+#else
+	errno = ENOSYS;
+	rc = -1;
+#endif
+        goto End;
+    }
+    
+    if (dirp && dirp->fd < 0) {
+	/* Simulate no attrs found */
+        rc = 0;
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): Virtual -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+        goto End;
+    }
+
+    path = strdupcat(fsobj_path(dirp), "/", name, NULL);
+    if (!path)
+        abort();
+    
+#if HAVE_EXTATTR_LIST_LINK
+    rc = extattr_list_link(path, EXTATTR_NAMESPACE_USER, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): extattr_list_link(%s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+		path, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+    
+
+#elif HAVE_LLISTXATTR
+    rc = llistxattr(path, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): llistxattr(%s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+		path, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_LISTXATTR
+    rc = listxattr(path, data, nbytes, XATTR_NOFOLLOW);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_list_attrs(%s, %s, %p, %llu): listxattr(%s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", data, (long long unsigned) nbytes,
+		path, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+#else
+    errno = ENOSYS;
+    rc = -1;
+#endif
+    
+ End:
+    if (path)
+        free(path);
+
+    return rc;
+}
+
+/*
+ * Get an Extended Attribute
+ *
+ * Arguments:
+ *  op       Object (name == NULL) or Directory
+ *  np       Name or NULL
+ *  mode     New mode bits
+ *
+ * Returns:
+ *   1       Updated
+ *   0       No update needed
+ *  -1       Something went wrong
+ */
+ssize_t
+fsobj_get_attr(FSOBJ *op,
+	       const char *np,
+	       const char *an,
+	       void *data,
+	       size_t nbytes) {
+    ssize_t rc = -1;
+    const char *name;
+    char *path = NULL;
+    FSOBJ *dirp = NULL;
+
+    
+    if (!op && !np)
+        abort();
+
+    if (op && op->magic != FSOBJ_MAGIC)
+        abort();
+    
+    if (np) {
+        dirp = op;
+        name = np;
+    } else {
+        dirp = op->parent;
+        name = op->name;
+    }
+    
+    if (dirp && !S_ISDIR(dirp->stat.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    
+    if (op != dirp && op->fd >= 0) {
+#if HAVE_EXTATTR_GET_FD
+        rc = extattr_get_fd(op->fd, EXTATTR_NAMESPACE_USER, an, data, nbytes);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): extattr_get_fd(%d, %s, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an, data, nbytes,
+                    op->fd, an, data, nbytes,
+                    rc, rc < 0 ? strerror(errno) : "");
+#elif HAVE_FGETXATTR
+#ifdef XATTR_NOFOLLOW
+	rc = fgetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
+#else
+	rc = fgetxattr(op->fd, an, data, nbytes);
+#endif
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): fgetxattr(%d, %s, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+                    op->fd, an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+#else
+	errno = ENOSYS;
+	rc = -1;
+#endif
+        goto End;
+    }
+    
+    if (dirp && dirp->fd < 0) {
+	/* Simulate no attrs found */
+        rc = 0;
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): Virtual -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL",
+		    an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+        goto End;
+    }
+
+    path = strdupcat(fsobj_path(dirp), "/", name, NULL);
+    if (!path)
+        abort();
+    
+#if HAVE_EXTATTR_GET_LINK
+    rc = extattr_get_link(path, EXTATTR_NAMESPACE_USER, an, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): extattr_get_link(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_LGETXATTR
+    rc = lgetxattr(path, an, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): lgetxattr(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL",
+		an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_GETXATTR
+    rc = getxattr(path, an, data, nbytes, 0, XATTR_NOFOLLOW);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_get_attr(%s, %s, %s, %p, %llu): getxattr(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+#else
+    errno = ENOSYS;
+    rc = -1;
+#endif
+    
+ End:
+    if (path)
+        free(path);
+
+    return rc;
+}
+
+/*
+ * Set an Extended Attribute
+ *
+ * Arguments:
+ *  op       Object (name == NULL) or Directory
+ *  np       Name or NULL
+ *  mode     New mode bits
+ *
+ * Returns:
+ *   1       Updated
+ *   0       No update needed
+ *  -1       Something went wrong
+ */
+ssize_t
+fsobj_set_attr(FSOBJ *op,
+	       const char *np,
+	       const char *an,
+	       const void *data,
+	       size_t nbytes) {
+    ssize_t rc = -1;
+    const char *name;
+    char *path = NULL;
+    FSOBJ *dirp = NULL;
+
+    
+    if (!op && !np)
+        abort();
+
+    if (op && op->magic != FSOBJ_MAGIC)
+        abort();
+    
+    if (np) {
+        dirp = op;
+        name = np;
+    } else {
+        dirp = op->parent;
+        name = op->name;
+    }
+    
+    if (dirp && !S_ISDIR(dirp->stat.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    
+    if (op != dirp && op->fd >= 0) {
+#if HAVE_EXTATTR_SET_FD
+        rc = extattr_set_fd(op->fd, EXTATTR_NAMESPACE_USER, an, data, nbytes);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): extattr_set_fd(%d, %s, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an, data, nbytes,
+                    op->fd, an, data, nbytes,
+                    rc, rc < 0 ? strerror(errno) : "");
+#elif HAVE_FSETXATTR
+#ifdef XATTR_NOFOLLOW
+	rc = fsetxattr(op->fd, an, data, nbytes, 0, XATTR_NOFOLLOW);
+#else
+	rc = fsetxattr(op->fd, an, data, nbytes);
+#endif
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): fsetxattr(%d, %s, %p, %llu) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+                    op->fd, an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+#else
+	errno = ENOSYS;
+	rc = -1;
+#endif
+        goto End;
+    }
+    
+    if (dirp && dirp->fd < 0) {
+	/* Simulate no attrs found */
+        rc = 0;
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): Virtual -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL",
+		    an, data, (long long unsigned) nbytes,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+        goto End;
+    }
+
+    path = strdupcat(fsobj_path(dirp), "/", name, NULL);
+    if (!path)
+        abort();
+    
+#if HAVE_EXTATTR_SET_LINK
+    rc = extattr_set_link(path, EXTATTR_NAMESPACE_USER, an, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): extattr_set_link(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_LSETXATTR
+    rc = lsetxattr(path, an, data, nbytes);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): lsetxattr(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL",
+		an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_SETXATTR
+    rc = setxattr(path, an, data, nbytes, 0, XATTR_NOFOLLOW);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_set_attr(%s, %s, %s, %p, %llu): setxattr(%s, %s, %p, %llu) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an, data, (long long unsigned) nbytes,
+		path, an, data, (long long unsigned) nbytes,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+#else
+    errno = ENOSYS;
+    rc = -1;
+#endif
+    
+ End:
+    if (path)
+        free(path);
+
+    return rc;
+}
+
+/*
+ * Delete an Extended Attribute
+ *
+ * Arguments:
+ *  op       Object (name == NULL) or Directory
+ *  np       Name or NULL
+ *  mode     New mode bits
+ *
+ * Returns:
+ *   1       Updated
+ *   0       No update needed
+ *  -1       Something went wrong
+ */
+ssize_t
+fsobj_delete_attr(FSOBJ *op,
+		  const char *np,
+		  const char *an) {
+    ssize_t rc = -1;
+    const char *name;
+    char *path = NULL;
+    FSOBJ *dirp = NULL;
+
+    
+    if (!op && !np)
+        abort();
+
+    if (op && op->magic != FSOBJ_MAGIC)
+        abort();
+    
+    if (np) {
+        dirp = op;
+        name = np;
+    } else {
+        dirp = op->parent;
+        name = op->name;
+    }
+    
+    if (dirp && !S_ISDIR(dirp->stat.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    
+    if (op != dirp && op->fd >= 0) {
+#if HAVE_EXTATTR_DELETE_FD
+        rc = extattr_delete_fd(op->fd, EXTATTR_NAMESPACE_USER, an);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s, : extattr_deletefd(%d, %s) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an,
+                    op->fd, an,
+                    rc, rc < 0 ? strerror(errno) : "");
+#elif HAVE_FREMOVEXATTR
+#ifdef XATTR_NOFOLLOW
+	rc = fremovexattr(op->fd, an, 0, XATTR_NOFOLLOW);
+#else
+	rc = fremovexattr(op->fd, an);
+#endif
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_set_attr(%s, %s, %s): fremovexattr(%d, %s) -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL", an,
+                    op->fd, an,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+#else
+	errno = ENOSYS;
+	rc = -1;
+#endif
+        goto End;
+    }
+    
+    if (dirp && dirp->fd < 0) {
+	/* Simulate no attrs found */
+        rc = 0;
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s): Virtual -> %d (%s)\n",
+                    fsobj_path(op), np ? np : "NULL",
+		    an,
+                    (int) rc, rc < 0 ? strerror(errno) : "");
+        goto End;
+    }
+
+    path = strdupcat(fsobj_path(dirp), "/", name, NULL);
+    if (!path)
+        abort();
+    
+#if HAVE_EXTATTR_DELETE_LINK
+    rc = extattr_delete_link(path, EXTATTR_NAMESPACE_USER, an);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s): extattr_delete_link(%s, %s) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an,
+		path, an,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_LREMOVEXATTR
+    rc = lremovexattr(path, an);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s): lremovexattr(%s, %s) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL",
+		an,
+		path, an,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+
+#elif HAVE_REMOVEXATTR
+    rc = removexattr(path, an, 0, XATTR_NOFOLLOW);
+    if (f_debug > 1)
+	fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s): removexattr(%s, %s) -> %d (%s)\n",
+		fsobj_path(op), np ? np : "NULL", an,
+		path, an,
+		(int) rc, rc < 0 ? strerror(errno) : "");
+#else
+    errno = ENOSYS;
+    rc = -1;
+#endif
+    
+ End:
+    if (path)
+        free(path);
+
+    return rc;
 }

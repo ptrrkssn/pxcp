@@ -48,10 +48,6 @@
 #include <time.h>
 #include <sys/mman.h>
 
-#if HAVE_SYS_EXTATTR_H
-#include <sys/extattr.h>
-#endif
-
 #include "acls.h"
 #include "fsobj.h"
 #include "digest.h"
@@ -69,6 +65,7 @@ int f_debug = 0;
 int f_verbose = 0;
 int f_noxdev = 0;
 int f_dryrun = 0;
+int f_list = 0;
 int f_sync = 0;
 int f_stats = 0;
 int f_recurse = 0;
@@ -109,8 +106,11 @@ get_digest(char *start,
     int v;
 
     v = digest_str2type(start);
-    if (v < 0)
-        return get_int(start, next);
+    fprintf(stderr, "get_digest: digest_str2type(%s) -> %d\n", start, v);
+    if (v < 0) {
+        v = get_int(start, next);
+	fprintf(stderr, "get_digest: get_int(%s) -> %d\n", start, v);
+    }
     
     if (v >= 0) {
         while (*start)
@@ -150,6 +150,7 @@ struct options {
     { 'C', "checksum",   &f_checksum,    get_digest,  "Only copy files if checksum differs" },
     { 'D', "debug",      &f_debug,       get_int,     "Set debugging level" },
     { 'F', "flags",      &f_flags,       get_int,     "Copy object flags" },
+    { 'L', "list",       &f_list,        get_int,     "List objects" },
     { 'M', "mmap",       &f_mmap,        get_int,     "Use mmap(2)" },
     { 'S', "sizes",      &f_sizes,       get_int,     "Copy only objects with changed size" },
     { 'T', "timestamps", &f_timestamps,  get_int,     "Copy timestamps" }, 
@@ -370,11 +371,15 @@ file_clone(FSOBJ *src,
         }
 
         if (s_rc >= 0 && s_rc == d_rc && memcmp(s_digbuf, d_digbuf, s_rc) != 0) {
-            if (f_debug > 1)
+            if (f_debug > 1 || 1)
                 fprintf(stderr, "** file_clone(%s, %s): Digest differs\n",
                         fsobj_path(src), fsobj_path(dst));
             update_f = 1;
-        }
+        } else {
+            if (f_debug > 1 || 1)
+                fprintf(stderr, "** file_clone(%s, %s): Digest equal\n",
+                        fsobj_path(src), fsobj_path(dst));
+	}
     }
 
     if (f_dryrun || !update_f)
@@ -875,15 +880,13 @@ acls_clone(FSOBJ *src,
 int
 attrs_clone(FSOBJ *src,
 	    FSOBJ *dst) {
-#if HAVE_EXTATTR_GET_FD
     ssize_t s_alen, d_alen = 0;
     char *s_alist = NULL, *d_alist = NULL;
     int rc = 0, s_i, d_i = 0;
-    int d_open = fsobj_isreal(dst);
 
 
     /* Get list of extended attribute from source */
-    s_alen = extattr_list_fd(src->fd, EXTATTR_NAMESPACE_USER, NULL, 0);
+    s_alen = fsobj_list_attrs(src, NULL, NULL, 0);
     if (s_alen < 0) {
 	fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
 		argv0, fsobj_path(src), strerror(errno));
@@ -898,7 +901,7 @@ attrs_clone(FSOBJ *src,
 	goto End;
     }
 
-    s_alen = extattr_list_fd(src->fd, EXTATTR_NAMESPACE_USER, s_alist, s_alen);
+    s_alen = fsobj_list_attrs(src, NULL, s_alist, s_alen);
     if (s_alen < 0) {
 	fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
 		argv0, fsobj_path(src), strerror(errno));
@@ -906,234 +909,171 @@ attrs_clone(FSOBJ *src,
     }
 
 
-    if (d_open) {
-	/* Get list of extended attribute from destination */
-	d_alen = extattr_list_fd(dst->fd, EXTATTR_NAMESPACE_USER, NULL, 0);
-	if (d_alen < 0) {
-	    fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
-		    argv0, fsobj_path(dst), strerror(errno));
-	    return -1;
-	}
-
-	d_alist = (char *) malloc(d_alen);
-	if (!d_alist) {
-	    fprintf(stderr, "%s: Error: %s: malloc(%ld): %s\n",
-		    argv0, fsobj_path(dst), d_alen, strerror(errno));
-	    rc = -1;
-	    goto End;
-	}
-
-	d_alen = extattr_list_fd(dst->fd, EXTATTR_NAMESPACE_USER, d_alist, d_alen);
-	if (d_alen < 0) {
-	    fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
-		    argv0, fsobj_path(dst), strerror(errno));
-	    return -1;
-	}
-
-	/* Scan for attributes to remove */
-	d_i = 0;
-	while (d_i < d_alen) {
-	    unsigned char d_anlen = d_alist[d_i++];
-
-	    if (d_anlen == 0)
-		continue;
-
-	    /* Scan for matching attribute */
-	    s_i = 0;
-	    while (s_i < s_alen) {
-		unsigned char s_anlen = s_alist[s_i++];
-		if (s_anlen == 0)
-		    continue;
-
-		if (d_anlen == s_anlen && memcmp(s_alist+s_i, d_alist+d_i, s_anlen) == 0)
-		    break;
-	    }
-	    if (s_i >= s_alen) {
-		if (!f_dryrun) {
-		    char *aname = strndup((char *) d_alist+d_i, d_anlen);
-
-		    if (!aname) {
-			fprintf(stderr, "%s: Error: %s: %.*s: strndup: %s\n",
-				argv0, fsobj_path(dst), d_anlen, d_alist+d_i, strerror(errno));
-			rc = -1;
-			goto End;
-		    }
-
-		    if (extattr_delete_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname) < 0) {
-			fprintf(stderr, "%s: Error: %s: %s: extattr_delete: %s\n",
-				argv0, fsobj_path(dst), aname, strerror(errno));
-			free(aname);
-			aname = NULL;
-			rc = -1;
-			goto End;
-		    }
-		    free(aname);
-		    aname = NULL;
-		}
-		if (f_verbose > 1)
-		    printf("  - %s : %.*s\n", fsobj_path(dst), d_anlen, d_alist+d_i);
-		rc = 1;
-	    }
-
-	    d_i += d_anlen;
-	}
+    /* Get list of Attribute from destination */
+    d_alen = fsobj_list_attrs(dst, NULL, NULL, 0);
+    if (d_alen < 0) {
+	fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
+		argv0, fsobj_path(dst), strerror(errno));
+	return -1;
     }
 
+    d_alist = (char *) malloc(d_alen);
+    if (!d_alist) {
+	fprintf(stderr, "%s: Error: %s: malloc(%ld): %s\n",
+		argv0, fsobj_path(dst), d_alen, strerror(errno));
+	rc = -1;
+	goto End;
+    }
+    
+    d_alen = fsobj_list_attrs(dst, NULL, d_alist, d_alen);
+    if (d_alen < 0) {
+	fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
+		argv0, fsobj_path(dst), strerror(errno));
+	return -1;
+    }
+
+    /* Scan for attributes to remove */
+    d_i = 0;
+    while (d_i < d_alen) {
+	/* Scan for matching attribute */
+	char *aname = d_alist+d_i;
+
+	if (f_debug)
+	    fprintf(stderr, "** attrs_clone: aname = %s\n", aname);
+	
+	s_i = 0;
+	while (s_i < s_alen) {
+	    if (strcmp(aname, d_alist+d_i) == 0)
+		break; /* Found a match */
+	    
+	    /* Locate end of SRC aname */
+	    while (s_i < s_alen && s_alist[s_i++] != '\0')
+		;
+	}
+	if (s_i >= s_alen) {
+	    if (!f_dryrun) {
+		if (fsobj_delete_attr(dst, NULL, aname) < 0) {
+		    fprintf(stderr, "%s: Error: %s: %s: Delete(attribute): %s\n",
+			    argv0, fsobj_path(dst), aname, strerror(errno));
+		    rc = -1;
+		    goto End;
+		}
+	    }
+	    if (f_verbose > 1)
+		printf("  - %s : %s\n", fsobj_path(dst), aname);
+	    rc = 1;
+	}
+	
+	/* Locate end of DST aname */
+	while (d_i < d_alen && d_alist[d_i++] != '\0')
+	    ;
+    }
 
     s_i = 0;
     while (s_i < s_alen) {
-	char *aname;
+	/* Scan for matching attribute */
+	char *aname = s_alist+s_i;	
 	ssize_t s_adlen, d_adlen;
-	void *s_adata = NULL, *d_adata = NULL;
-	unsigned char s_anlen = s_alist[s_i++];
-
-	if (s_anlen == 0)
-	    continue;
-
-	if (d_open) {
-	    /* Scan for matching attribute */
-	    d_i = 0;
-	    while (d_i < d_alen) {
-		unsigned char d_anlen = d_alist[d_i++];
-
-		if (d_anlen == 0)
-		    continue;
-
-		if (s_anlen == d_anlen && memcmp(s_alist+s_i, d_alist+d_i, s_anlen) == 0)
-		    break;
-	    }
+	void *s_adata, *d_adata;
+	
+	d_i = 0;
+	while (d_i < d_alen) {
+	    if (strcmp(aname, d_alist+d_i) == 0)
+		break;
+	    
+	    /* Locate end of DST aname */
+	    while (d_i < d_alen && d_alist[d_i++] != '\0')
+		;
 	}
-
-	aname = strndup(s_alist+s_i, s_anlen);
-	if (!aname) {
-	    fprintf(stderr, "%s: Error: %s: %.*s: strndup: %s\n",
-		    argv0, fsobj_path(src), s_anlen, s_alist+s_i, strerror(errno));
-	    rc = -1;
-	    goto End;
-	}
-
-	s_adlen = extattr_get_fd(src->fd, EXTATTR_NAMESPACE_USER, aname, NULL, 0);
+	
+	/* Get SRC attribute */
+	s_adlen = fsobj_get_attr(src, NULL, aname, NULL, 0);
 	if (s_adlen < 0) {
 	    fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
 		    argv0, fsobj_path(src), aname, strerror(errno));
-	    free(aname);
-	    aname = NULL;
 	    rc = -1;
 	    goto End;
 	}
 
 	s_adata = malloc(s_adlen);
 	if (!s_adata) {
-	    fprintf(stderr, "%s: Error: %s: %.*s: malloc(%ld): %s\n",
-		    argv0, fsobj_path(src), s_anlen, s_alist+s_i, s_adlen, strerror(errno));
+	    fprintf(stderr, "%s: Error: %s: %s: malloc(%ld): %s\n",
+		    argv0, fsobj_path(src), aname, s_adlen, strerror(errno));
 	    rc = -1;
 	    goto End;
 	}
 
-	s_adlen = extattr_get_fd(src->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen);
+	s_adlen = fsobj_get_attr(src, NULL, aname, s_adata, s_adlen);
 	if (s_adlen < 0) {
 	    fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
 		    argv0, fsobj_path(src), aname, strerror(errno));
-	    free(aname);
-	    aname = NULL;
 	    rc = -1;
 	    goto End;
 	}
 
-	if (d_open) {
-	    if (d_i < d_alen) {
-		d_adlen = extattr_get_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, NULL, 0);
-		if (d_adlen < 0) {
-		    fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
+	/* Get DST attribute */
+	d_adlen = fsobj_get_attr(dst, NULL, aname, NULL, 0);
+	if (d_adlen < 0) {
+	    fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
+		    argv0, fsobj_path(dst), d_alist+d_i, strerror(errno));
+	    rc = -1;
+	    goto End;
+	}
+
+	/* Only bother to read and check content if same lenght */
+	if (s_adlen == d_adlen) {
+	    d_adata = malloc(d_adlen);
+	    if (!d_adata) {
+		fprintf(stderr, "%s: Error: %s: %s: malloc(%ld): %s\n",
+			argv0, fsobj_path(dst), aname, d_adlen, strerror(errno));
+		rc = -1;
+		goto End;
+	    }
+		
+	    d_adlen = fsobj_get_attr(dst, NULL, aname, d_adata, d_adlen);
+	    if (d_adlen < 0) {
+		fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
+			argv0, fsobj_path(dst), aname, strerror(errno));
+		rc = -1;
+		goto End;
+	    }
+	    
+	    if (memcmp(d_adata, s_adata, s_adlen) != 0) {
+		if (!f_dryrun) {
+		    if (fsobj_set_attr(dst, NULL, aname, s_adata, s_adlen) < 0) {
+			fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
+				argv0, fsobj_path(dst), aname, strerror(errno));
+			rc = -1;
+			goto End;
+		    }
+		}
+		
+		if (f_verbose > 1)
+		    printf("  ! %s : %s\n", fsobj_path(dst), aname);
+		rc = 1;
+	    }
+	    free(d_adata);
+	    d_adata = NULL;
+	} else {
+	    if (!f_dryrun) {
+		if (fsobj_set_attr(dst, NULL, aname, s_adata, s_adlen) < 0) {
+		    fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
 			    argv0, fsobj_path(dst), aname, strerror(errno));
-		    free(aname);
-		    aname = NULL;
 		    rc = -1;
 		    goto End;
 		}
-
-		/* Only bother to read and check content if same lenght */
-		if (s_adlen == d_adlen) {
-		    d_adata = malloc(d_adlen);
-		    if (!d_adata) {
-			fprintf(stderr, "%s: Error: %s: %s: malloc(%ld): %s\n",
-				argv0, fsobj_path(dst), aname, d_adlen, strerror(errno));
-			free(aname);
-			aname = NULL;
-			rc = -1;
-			goto End;
-		    }
-
-		    d_adlen = extattr_get_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, d_adata, d_adlen);
-		    if (d_adlen < 0) {
-			fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
-				argv0, fsobj_path(dst), aname, strerror(errno));
-			free(aname);
-			aname = NULL;
-			rc = -1;
-			goto End;
-		    }
-
-		    if (memcmp(d_adata, s_adata, s_adlen) != 0) {
-			if (!f_dryrun) {
-			    if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
-				fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
-					argv0, fsobj_path(dst), aname, strerror(errno));
-				free(aname);
-				aname = NULL;
-				rc = -1;
-				goto End;
-			    }
-			}
-
-			if (f_verbose > 1)
-			    printf("  ! %s : %s\n", fsobj_path(dst), aname);
-			rc = 1;
-		    }
-		    free(d_adata);
-		    d_adata = NULL;
-		} else {
-		    if (!f_dryrun) {
-			if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
-			    fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
-				    argv0, fsobj_path(dst), aname, strerror(errno));
-			    free(aname);
-			    aname = NULL;
-			    rc = -1;
-			    goto End;
-			}
-		    }
-		    if (f_verbose > 1)
-			printf("  ! %s : %s\n", fsobj_path(dst), aname);
-		    rc = 1;
-		}
-	    } else {
-		if (!f_dryrun) {
-		    if (extattr_set_fd(dst->fd, EXTATTR_NAMESPACE_USER, aname, s_adata, s_adlen) < 0) {
-			fprintf(stderr, "%s: Error: %s: %s: extattr_set_fd: %s\n",
-				argv0, fsobj_path(dst), aname, strerror(errno));
-			free(aname);
-			aname = NULL;
-			rc = -1;
-			goto End;
-		    }
-		}
-		if (f_verbose > 1)
-		    printf("  + %s : %s\n", fsobj_path(dst), aname);
-		rc = 1;
 	    }
+	    if (f_verbose > 1)
+		printf("  ! %s : %s\n", fsobj_path(dst), aname);
+	    rc = 1;
 	}
 
-	if (s_adata) {
-	    free(s_adata);
-	    s_adata = NULL;
-	}
-	if (aname) {
-	    free(aname);
-	    aname = NULL;
-	}
-
-	s_i += s_anlen;
+	free(s_adata);
+	s_adata = NULL;
+	
+	/* Locate end of SRC aname */
+	while (s_i < s_alen && s_alist[s_i++] != '\0')
+	    ;
     }
 
  End:
@@ -1143,10 +1083,6 @@ attrs_clone(FSOBJ *src,
 	free(d_alist);
 
     return rc;
-#else
-    errno = ENOSYS;
-    return -1;
-#endif
 }
 
 
@@ -1173,7 +1109,7 @@ int
 dir_list(FSOBJ *op,
          int level) {
     FSOBJ obj;
-    int rc;
+    int n = 1, rc;
 
     
     if (f_debug > 1) 
@@ -1187,7 +1123,7 @@ dir_list(FSOBJ *op,
 	   op->stat.st_uid,
 	   op->stat.st_gid);
     
-    if (fsobj_typeof(op) != S_IFDIR || (f_maxdepth && level > f_maxdepth))
+    if (!f_recurse || fsobj_typeof(op) != S_IFDIR || (f_maxdepth && level > f_maxdepth))
 	return 1;
     
     if (fsobj_reopen(op, O_RDONLY|O_DIRECTORY) < 0)
@@ -1199,12 +1135,13 @@ dir_list(FSOBJ *op,
 	fsobj_reset(&obj);
 	if (rc < 0)
 	    break;
+	n += rc;
     }
     fsobj_fini(&obj);
     if (rc < 0)
 	return -1;
     
-    return 1+rc;
+    return n;
 }
 
 
@@ -1394,7 +1331,13 @@ clone(FSOBJ *src,
             while ((d_rc = fsobj_readdir(dst, &d_obj)) > 0) {
                 int s_rc;
 
-                
+
+		if (d_obj.stat.st_dev == src_base.stat.st_dev &&
+		    d_obj.stat.st_ino == src_base.stat.st_ino) {
+		    fprintf(stderr, "%s: Error: %s: Passing Source Base\n",
+			    argv0, fsobj_path(&d_obj));
+		}
+			
                 s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
                 if (f_debug)
                     fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
@@ -1423,39 +1366,48 @@ clone(FSOBJ *src,
                 fsobj_reset(&s_obj);
                 fsobj_reset(&d_obj);
             }
-#if 0
             fsobj_reset(&s_obj);
+#if 0
             fsobj_reset(&d_obj);
 #endif
         }
 
-        fsobj_rewind(src);
-        while ((s_rc = fsobj_readdir(src, &s_obj)) > 0) {
-            int d_rc;
+	if (f_recurse) {
+	    fsobj_rewind(src);
+	    while ((s_rc = fsobj_readdir(src, &s_obj)) > 0) {
+		int d_rc;
 
-            d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
-            if (f_debug)
-                fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
-            if (d_rc < 0) {
-                if (f_debug)
-                    fprintf(stderr, "*** clone: fsobj_open(%s/%s): rc=%d [DST]\n",
-                            fsobj_path(dst), s_obj.name, d_rc);
-                rc = -1;
-                break;
-            }
-
-            s_rc = clone(&s_obj, &d_obj, level+1);
-            if (s_rc < 0) {
-                if (f_debug)
-                    fprintf(stderr, "*** clone: clone(%s, %s) -> %d\n",
-                            fsobj_path(&s_obj), fsobj_path(&d_obj), s_rc);
-                rc = -1;
-                break;
-            }
-
-            fsobj_reset(&d_obj);
-            fsobj_reset(&s_obj);
-        }
+		if (s_obj.stat.st_dev == dst_base.stat.st_dev &&
+		    s_obj.stat.st_ino == dst_base.stat.st_ino) {
+		    fprintf(stderr, "%s: Error: %s: Infinte recursion - skipping\n",
+			    argv0, fsobj_path(&s_obj));
+		    continue;
+		}
+		
+		d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
+		if (f_debug)
+		    fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
+		if (d_rc < 0) {
+		    if (f_debug)
+			fprintf(stderr, "*** clone: fsobj_open(%s/%s): rc=%d [DST]\n",
+				fsobj_path(dst), s_obj.name, d_rc);
+		    rc = -1;
+		    break;
+		}
+		
+		s_rc = clone(&s_obj, &d_obj, level+1);
+		if (s_rc < 0) {
+		    if (f_debug)
+			fprintf(stderr, "*** clone: clone(%s, %s) -> %d\n",
+				fsobj_path(&s_obj), fsobj_path(&d_obj), s_rc);
+		    rc = -1;
+		    break;
+		}
+		
+		fsobj_reset(&d_obj);
+		fsobj_reset(&s_obj);
+	    }
+	}
 
         fsobj_fini(&d_obj);
         fsobj_fini(&s_obj);
@@ -1610,6 +1562,8 @@ usage(void) {
                options[k].l,
                options[k].help);
     puts("\nAll options may optionally take a numeric argument (-v3 or --verbose=3).");
+    printf("\nDigests:\n  ");
+    digests_print(stdout, ", ");
     exit(0);
 }
 
@@ -1617,7 +1571,7 @@ usage(void) {
 int
 main(int argc,
      char *argv[]) {
-    int i, k, rc = 0, c_rc;
+    int i, k, rc = 0, c_rc, na;
     char *s, *dirname, *name;
     FSOBJ src_parent, dst_parent;
     
@@ -1794,60 +1748,91 @@ main(int argc,
 
     clock_gettime(CLOCK_REALTIME, &t0);
 
-    path2dirbase(argv[i], &dirname, &name);
-    
-    if (fsobj_open(&src_parent, NULL, dirname, O_PATH, 0) <= 0) {
-      fprintf(stderr, "%s: Error: %s: Open(source directory): %s\n",
-	      argv[0], dirname, strerror(errno));
-      rc = 1;
-      goto Fail;
-    }
-      
-    if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
-	fprintf(stderr, "%s: Error: %s: Open(source object): %s\n",
-		argv[0], name, strerror(errno));
-        rc = 1;
-        goto Fail;
-    }
-
-    if (++i >= argc) {
-        if (f_debug) {
-            int n;
-
-            printf("Directory Listing of %s:\n", fsobj_path(&src_base));
-            n = dir_list(&src_base, 1);
-            printf("%d total objects\n", n);
-
-	    goto End;
-        }
-
-	fprintf(stderr, "%s: Error: Missing required <destination> argument\n",
+    na = argc-i;
+    if (na < 1) {
+	fprintf(stderr, "%s: Error: Missing required arguments (use with --help for usage)\n",
 		argv[0]);
         rc = 1;
         goto Fail;
     }
+    
+    /* Open first source */
+    if (f_debug)
+	fprintf(stderr, "** Opening first source: %s\n", argv[i]);
 
     path2dirbase(argv[i], &dirname, &name);
+
+    if (fsobj_open(&src_parent, NULL, dirname, O_PATH, 0) <= 0) {
+	fprintf(stderr, "%s: Error: %s: Open(source parent directory): %s\n",
+		argv[0], dirname, strerror(errno));
+	rc = 1;
+	goto Fail;
+    }
     
-    if (fsobj_open(&dst_parent, NULL, dirname, O_PATH, 0) <= 0) {
-      fprintf(stderr, "%s: Error: %s: Open(target directory): %s\n",
-	      argv[0], dirname, strerror(errno));
-      rc = 1;
-      goto Fail;
+    if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
+	fprintf(stderr, "%s: Error: %s/%s: Open(source object): %s\n",
+		argv[0], dirname, name, strerror(errno));
+	rc = 1;
+	goto Fail;
+
     }
+    
+    if (!f_list) {
+	/* Open copy target */
+	path2dirbase(argv[--argc], &dirname, &name);
+
+	if (fsobj_open(&dst_parent, NULL, dirname, O_PATH, 0) <= 0) {
+	    fprintf(stderr, "%s: Error: %s: Open(target parent directory): %s\n",
+		    argv[0], dirname, strerror(errno));
+	    rc = 1;
+	    goto Fail;
+	}
       
-    if (fsobj_open(&dst_base, &dst_parent, name, O_PATH|O_CREAT, src_base.stat.st_mode) < 0) {
-	fprintf(stderr, "%s: Error: %s: Open(target): %s\n",
-		argv[0], name, strerror(errno));
-        rc = 1;
-        goto Fail;
+	if (fsobj_open(&dst_base, &dst_parent, name, O_PATH|O_CREAT, na == 2 ? src_base.stat.st_mode : src_parent.stat.st_mode) < 0) {
+	    fprintf(stderr, "%s: Error: %s: Open(target object): %s\n",
+		    argv[0], name, strerror(errno));
+	    rc = 1;
+	    goto Fail;
+	}
     }
 
+    
+    while (i < argc) {
+	int n;
 
-    c_rc = clone(&src_base, &dst_base, 1);
-    if (c_rc < 0) {
-        rc = 1;
-	goto End;
+	if (f_list) {
+	    printf("Directory Listing of %s:\n", fsobj_path(&src_base));
+	    n = dir_list(&src_base, 1);
+	    printf("%d total objects\n\n", n);
+	} else {
+	    c_rc = clone(&src_base, &dst_base, 1);
+	    if (c_rc < 0) {
+		rc = 1;
+		goto End;
+	    }
+	}
+
+	if (++i < argc) {
+	    path2dirbase(argv[i], &dirname, &name);
+
+	    fsobj_reset(&src_base);
+	    fsobj_reset(&src_parent);
+	    
+	    if (fsobj_open(&src_parent, NULL, dirname, O_PATH, 0) <= 0) {
+		fprintf(stderr, "%s: Error: %s: Open(source directory): %s\n",
+			argv[0], dirname, strerror(errno));
+		rc = 1;
+		goto Fail;
+	    }
+	    
+	    if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
+		fprintf(stderr, "%s: Error: %s/%s: Open(source object): %s\n",
+			argv[0], dirname, name, strerror(errno));
+		rc = 1;
+		goto Fail;
+		
+	    }
+	}
     }
 
  End:
@@ -1919,7 +1904,10 @@ main(int argc,
 
  Fail:
     fsobj_fini(&src_base);
+    fsobj_fini(&src_parent);
+    
     fsobj_fini(&dst_base);
+    fsobj_fini(&dst_parent);
 
     exit(rc);
 }

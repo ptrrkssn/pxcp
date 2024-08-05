@@ -209,4 +209,29 @@ _fsobj_mode_type2str(mode_t m);
 extern char *
 _fsobj_open_flags(int flags);
 
+extern ssize_t
+fsobj_list_attrs(FSOBJ *op,
+		 const char *np,
+		 void *data,
+		 size_t nbytes);
+
+extern ssize_t
+fsobj_delete_attr(FSOBJ *op,
+		 const char *np,
+		 const char *an);
+
+extern ssize_t
+fsobj_get_attr(FSOBJ *op,
+	       const char *np,
+	       const char *an,
+	       void *data,
+	       size_t nbytes);
+
+extern ssize_t
+fsobj_set_attr(FSOBJ *op,
+	       const char *np,
+	       const char *an,
+	       const void *data,
+	       size_t nbytes);
+
 #endif

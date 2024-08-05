@@ -35,6 +35,8 @@
 
 #include "config.h"
 
+#include <stdio.h>
+
 #ifdef HAVE_STDINT_H
 #include <stdint.h>
 #endif
@@ -78,6 +80,10 @@ typedef enum {
 	      DIGEST_TYPE_SHA512   = 8,
 } DIGEST_TYPE;
 
+typedef struct {
+    char *name;
+    DIGEST_TYPE type;
+} DIGEST_LIST;
 
 typedef enum {
 	      DIGEST_STATE_NONE    = 0,
@@ -158,5 +164,9 @@ digest_str2type(const char *str);
 
 extern const char *
 digest_type2str(DIGEST_TYPE type);
+
+extern void
+digests_print(FILE *fp,
+	      const char *sep);
 
 #endif
