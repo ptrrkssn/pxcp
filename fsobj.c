@@ -2281,7 +2281,7 @@ fsobj_delete_attr(FSOBJ *op,
                     rc, rc < 0 ? strerror(errno) : "");
 #elif HAVE_FREMOVEXATTR
 #ifdef XATTR_NOFOLLOW
-	rc = fremovexattr(op->fd, an, 0, XATTR_NOFOLLOW);
+	rc = fremovexattr(op->fd, an, XATTR_NOFOLLOW);
 #else
 	rc = fremovexattr(op->fd, an);
 #endif
@@ -2330,7 +2330,7 @@ fsobj_delete_attr(FSOBJ *op,
 		(int) rc, rc < 0 ? strerror(errno) : "");
 
 #elif HAVE_REMOVEXATTR
-    rc = removexattr(path, an, 0, XATTR_NOFOLLOW);
+    rc = removexattr(path, an, XATTR_NOFOLLOW);
     if (f_debug > 1)
 	fprintf(stderr, "** fsobj_delete_attr(%s, %s, %s): removexattr(%s, %s) -> %d (%s)\n",
 		fsobj_path(op), np ? np : "NULL", an,
