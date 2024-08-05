@@ -885,6 +885,10 @@ attrs_clone(FSOBJ *src,
     int rc = 0, s_i, d_i = 0;
 
 
+    if (f_debug)
+        fprintf(stderr, "*** attrs_clone(%s, %s)\n",
+                fsobj_path(src), fsobj_path(dst));
+    
     /* Get list of extended attribute from source */
     s_alen = fsobj_list_attrs(src, NULL, NULL, 0);
     if (s_alen < 0) {
@@ -932,6 +936,7 @@ attrs_clone(FSOBJ *src,
 	return -1;
     }
 
+    
     /* Scan for attributes to remove */
     d_i = 0;
     while (d_i < d_alen) {
@@ -939,7 +944,7 @@ attrs_clone(FSOBJ *src,
 	char *aname = d_alist+d_i;
 
 	if (f_debug)
-	    fprintf(stderr, "** attrs_clone: aname = %s\n", aname);
+	    fprintf(stderr, "** attrs_clone: check for remove : aname = %s\n", aname);
 	
 	s_i = 0;
 	while (s_i < s_alen) {
@@ -976,6 +981,9 @@ attrs_clone(FSOBJ *src,
 	ssize_t s_adlen, d_adlen;
 	void *s_adata, *d_adata;
 	
+	if (f_debug)
+	    fprintf(stderr, "** attrs_clone: check for copy : Aname = %s\n", aname);
+        
 	d_i = 0;
 	while (d_i < d_alen) {
 	    if (strcmp(aname, d_alist+d_i) == 0)

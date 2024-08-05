@@ -1917,7 +1917,8 @@ fsobj_list_attrs(FSOBJ *op,
                     (int) rc, rc < 0 ? strerror(errno) : "");
 
 	/* Reformat the list of attribute names */
-	_attrlist_freebsd_to_nsbuf(data, rc);
+        if (data)
+            _attrlist_freebsd_to_nsbuf(data, rc);
 	
 #elif HAVE_FLISTXATTR
 #ifdef XATTR_NOFOLLOW
@@ -1959,6 +1960,10 @@ fsobj_list_attrs(FSOBJ *op,
 		path, data, (long long unsigned) nbytes,
 		(int) rc, rc < 0 ? strerror(errno) : "");
     
+    /* Reformat the list of attribute names */
+    if (data)
+        _attrlist_freebsd_to_nsbuf(data, rc);
+    
 
 #elif HAVE_LLISTXATTR
     rc = llistxattr(path, data, nbytes);
@@ -1996,8 +2001,8 @@ fsobj_list_attrs(FSOBJ *op,
  *  mode     New mode bits
  *
  * Returns:
- *   1       Updated
- *   0       No update needed
+ *  >0       Got an attribute
+ *   0       No attribute found
  *  -1       Something went wrong
  */
 ssize_t
@@ -2105,6 +2110,9 @@ fsobj_get_attr(FSOBJ *op,
     if (path)
         free(path);
 
+    if (rc < 0 && errno == ENOATTR)
+        rc = 0;
+    
     return rc;
 }
 
@@ -2345,5 +2353,8 @@ fsobj_delete_attr(FSOBJ *op,
     if (path)
         free(path);
 
+    if (rc < 0 && errno == ENOATTR)
+        rc = 0;
+    
     return rc;
 }
