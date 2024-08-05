@@ -1049,32 +1049,33 @@ dir_list(FSOBJ *op,
 
     
     if (f_debug > 1) 
-      fprintf(stderr, "** dir_list(%s)\n", fsobj_path(op));
+	fprintf(stderr, "** dir_list(%s)\n", fsobj_path(op));
     
-    fprintf(stderr, "%*s%s [t=%s, p=%04o, s=%llu, u=%d, g=%d]\n",
-	    level*2, "", fsobj_path(op),
-	    _fsobj_mode_type2str(op->stat.st_mode),
-	    op->stat.st_mode&ALLPERMS,
-	    (long long unsigned) op->stat.st_size,
-	    op->stat.st_uid,
-	    op->stat.st_gid);
+    printf("%*s%s [t=%s, p=%04o, s=%llu, u=%d, g=%d]\n",
+	   level*2, "", fsobj_path(op),
+	   _fsobj_mode_type2str(op->stat.st_mode),
+	   op->stat.st_mode&ALLPERMS,
+	   (long long unsigned) op->stat.st_size,
+	   op->stat.st_uid,
+	   op->stat.st_gid);
     
-    if (fsobj_typeof(op) == S_IFDIR && (!f_maxdepth || level < f_maxdepth)) {
-      if (fsobj_reopen(op, O_RDONLY|O_DIRECTORY) < 0)
+    if (fsobj_typeof(op) != S_IFDIR || (f_maxdepth && level > f_maxdepth))
+	return 1;
+    
+    if (fsobj_reopen(op, O_RDONLY|O_DIRECTORY) < 0)
 	return -1;
-
-      fsobj_init(&obj);
-      while ((rc = fsobj_readdir(op, &obj)) > 0) {
+	
+    fsobj_init(&obj);
+    while ((rc = fsobj_readdir(op, &obj)) > 0) {
 	rc = dir_list(&obj, level+1);
 	fsobj_reset(&obj);
 	if (rc < 0)
-	  break;
-      }
-      fsobj_fini(&obj);
-      if (rc < 0)
-	return -1;
+	    break;
     }
-
+    fsobj_fini(&obj);
+    if (rc < 0)
+	return -1;
+    
     return 1+rc;
 }
 
