@@ -14,6 +14,11 @@ AC_PROG_LN_S
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
+AC_TYPE_UINT8_T
+AC_TYPE_UINT16_T
+AC_TYPE_UINT32_T
+AC_TYPE_UINT64_T
+
 # Checks for header files.
 AC_CHECK_HEADERS([sys/acl.h acl/libacl.h sys/extattr.h sys/dirent.h sys/xattr.h])
 AC_CHECK_HEADERS([zlib.h md5.h skein.h sha256.h sha384.h sha512.h])

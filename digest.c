@@ -48,12 +48,15 @@ digest_str2type(const char *s) {
   if (strcasecmp(s, "NONE") == 0)
     return DIGEST_TYPE_NONE;
   
+  if (strcasecmp(s, "XOR") == 0)
+    return DIGEST_TYPE_XOR;
+
   if (strcasecmp(s, "ADLER32") == 0 || strcasecmp(s, "ADLER-32") == 0)
     return DIGEST_TYPE_ADLER32;
-
+  
   if (strcasecmp(s, "CRC32") == 0 || strcasecmp(s, "CRC-32") == 0)
     return DIGEST_TYPE_CRC32;
-
+  
   if (strcasecmp(s, "MD5") == 0 || strcasecmp(s, "MD-5") == 0)
     return DIGEST_TYPE_MD5;
 
@@ -78,6 +81,9 @@ digest_type2str(DIGEST_TYPE type) {
   switch (type) {
   case DIGEST_TYPE_NONE:
     return "NONE";
+
+  case DIGEST_TYPE_XOR:
+    return "XOR";
 
   case DIGEST_TYPE_ADLER32:
     return "ADLER32";
@@ -109,15 +115,17 @@ digest_type2str(DIGEST_TYPE type) {
 int
 digest_init(DIGEST *dp,
             DIGEST_TYPE type) {
-  if (type == DIGEST_TYPE_INVALID)
-    return -1;
-  
   memset(dp, 0, sizeof(*dp));
 
   dp->state = DIGEST_STATE_NONE;
+  dp->type = type;
   
   switch (dp->type) {
   case DIGEST_TYPE_NONE:
+    break;
+    
+  case DIGEST_TYPE_XOR:
+    dp->ctx.xor8 = 0;
     break;
 
 #ifdef HAVE_ADLER32_Z
@@ -150,7 +158,6 @@ digest_init(DIGEST *dp,
     break;
 #endif
 
-
 #ifdef HAVE_SHA384_INIT
   case DIGEST_TYPE_SHA384:
     SHA384_Init(&dp->ctx.sha384);
@@ -167,7 +174,6 @@ digest_init(DIGEST *dp,
     return -1;
   }
 
-  dp->type = type;
   dp->state = DIGEST_STATE_INIT;
   return 0;
 }
@@ -183,9 +189,14 @@ digest_update(DIGEST *dp,
     return -1;
 
   switch (dp->state) {
-  case DIGEST_STATE_INIT:
   case DIGEST_STATE_UPDATE:
     switch (dp->type) {
+      
+    case DIGEST_TYPE_XOR:
+      while (bufsize-- > 0)
+	dp->ctx.xor8 |= *buf++;
+      break;
+      
 #ifdef HAVE_ADLER32_Z
     case DIGEST_TYPE_ADLER32:
       dp->ctx.adler32 = adler32_z(dp->ctx.adler32, buf, bufsize);
@@ -241,24 +252,33 @@ digest_update(DIGEST *dp,
   return 0;
 }
 
-
 ssize_t
 digest_final(DIGEST *dp,
 	     unsigned char *buf,
 	     size_t bufsize) {
   ssize_t rlen = -1;
-
-  
   switch (dp->state) {
+  case DIGEST_STATE_NONE:
+    return -1;
+    
+  case DIGEST_STATE_FINAL:
   case DIGEST_STATE_INIT:
   case DIGEST_STATE_UPDATE:
-    
     switch (dp->type) {
     case DIGEST_TYPE_INVALID:
       return -1;
       
     case DIGEST_TYPE_NONE:
       rlen = 0;
+      break;
+
+    case DIGEST_TYPE_XOR:
+      if (bufsize < DIGEST_BUFSIZE_XOR) {
+	errno = EOVERFLOW;
+	return -1;
+      }
+      * (uint8_t *) buf = dp->ctx.xor8;
+      rlen = DIGEST_BUFSIZE_XOR;
       break;
 
 #ifdef HAVE_ADLER32_Z
@@ -315,7 +335,7 @@ digest_final(DIGEST *dp,
       rlen = DIGEST_BUFSIZE_SHA256;
       break;
 #endif
-
+      
 #ifdef HAVE_SHA384_INIT
     case DIGEST_TYPE_SHA384:
       if (bufsize < DIGEST_BUFSIZE_SHA384) {
@@ -339,7 +359,7 @@ digest_final(DIGEST *dp,
     }
     break;
 #endif
-    
+
   default:
     errno = EINVAL;
     return -1;
@@ -348,7 +368,6 @@ digest_final(DIGEST *dp,
   dp->state = DIGEST_STATE_FINAL;
   return rlen;
 }
-
 
 
 void
@@ -376,3 +395,5 @@ digest_stateof(DIGEST *dp) {
   
   return dp->state;
 }
+
+
