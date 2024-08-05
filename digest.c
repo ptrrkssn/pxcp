@@ -30,17 +30,13 @@
 ** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "config.h"
+#include "digest.h"
 
 #include <errno.h>
 #include <string.h>
-#ifdef HAVE_ZLIB_H
-#include <zlib.h>
-#endif
 
 #include <arpa/inet.h>
 
-#include "digest.h"
 
 
 DIGEST_TYPE
@@ -256,117 +252,132 @@ ssize_t
 digest_final(DIGEST *dp,
 	     unsigned char *buf,
 	     size_t bufsize) {
-  ssize_t rlen = -1;
-  switch (dp->state) {
-  case DIGEST_STATE_NONE:
-    return -1;
+    ssize_t rlen = -1;
     
-  case DIGEST_STATE_FINAL:
-  case DIGEST_STATE_INIT:
-  case DIGEST_STATE_UPDATE:
-    switch (dp->type) {
-    case DIGEST_TYPE_INVALID:
-      return -1;
-      
-    case DIGEST_TYPE_NONE:
-      rlen = 0;
-      break;
-
-    case DIGEST_TYPE_XOR:
-      if (bufsize < DIGEST_BUFSIZE_XOR) {
-	errno = EOVERFLOW;
+    switch (dp->state) {
+    case DIGEST_STATE_NONE:
 	return -1;
-      }
-      * (uint8_t *) buf = dp->ctx.xor8;
-      rlen = DIGEST_BUFSIZE_XOR;
-      break;
-
+	
+    case DIGEST_STATE_FINAL:
+    case DIGEST_STATE_INIT:
+    case DIGEST_STATE_UPDATE:
+	switch (dp->type) {
+	case DIGEST_TYPE_INVALID:
+	    return -1;
+	    
+	case DIGEST_TYPE_NONE:
+	    rlen = 0;
+	    break;
+	    
+	case DIGEST_TYPE_XOR:
+	    if (bufsize < DIGEST_BUFSIZE_XOR) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    * (uint8_t *) buf = dp->ctx.xor8;
+	    rlen = DIGEST_BUFSIZE_XOR;
+	    break;
+	    
+	case DIGEST_TYPE_ADLER32:
 #ifdef HAVE_ADLER32_Z
-    case DIGEST_TYPE_ADLER32:
-      if (bufsize < DIGEST_BUFSIZE_ADLER32) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      * (uint32_t *) buf = htonl(dp->ctx.adler32);
-      rlen = DIGEST_BUFSIZE_ADLER32;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_ADLER32) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    * (uint32_t *) buf = htonl(dp->ctx.adler32);
+	    rlen = DIGEST_BUFSIZE_ADLER32;
+	    break;
+#else
+	    return -1;
 #endif
-
+	    
+	case DIGEST_TYPE_CRC32:
 #ifdef HAVE_CRC32_Z
-    case DIGEST_TYPE_CRC32:
-      if (bufsize < DIGEST_BUFSIZE_CRC32) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      * (uint32_t *) buf = htonl(dp->ctx.crc32);
-      rlen = DIGEST_BUFSIZE_CRC32;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_CRC32) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    * (uint32_t *) buf = htonl(dp->ctx.crc32);
+	    rlen = DIGEST_BUFSIZE_CRC32;
+	    break;
+#else
+	    return -1;
 #endif
-
+	    
+	case DIGEST_TYPE_MD5:
 #ifdef HAVE_MD5INIT
-    case DIGEST_TYPE_MD5:
-      if (bufsize < DIGEST_BUFSIZE_MD5) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      MD5Final(buf, &dp->ctx.md5);
-      rlen = DIGEST_BUFSIZE_MD5;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_MD5) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    MD5Final(buf, &dp->ctx.md5);
+	    rlen = DIGEST_BUFSIZE_MD5;
+	    break;
+#else
+	    return -1;
 #endif
-
+	    
+	case DIGEST_TYPE_SKEIN256:
 #ifdef HAVE_SKEIN256_INIT
-    case DIGEST_TYPE_SKEIN256:
-      if (bufsize < DIGEST_BUFSIZE_SKEIN256) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      SKEIN256_Final(buf, &dp->ctx.skein256);
-      rlen = DIGEST_BUFSIZE_SKEIN256;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_SKEIN256) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    SKEIN256_Final(buf, &dp->ctx.skein256);
+	    rlen = DIGEST_BUFSIZE_SKEIN256;
+	    break;
+#else
+	    return -1;
 #endif
-
+	    
+	case DIGEST_TYPE_SHA256:
 #ifdef HAVE_SHA256_INIT
-    case DIGEST_TYPE_SHA256:
-      if (bufsize < DIGEST_BUFSIZE_SHA256) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      SHA256_Final(buf, &dp->ctx.sha256);
-      rlen = DIGEST_BUFSIZE_SHA256;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_SHA256) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    SHA256_Final(buf, &dp->ctx.sha256);
+	    rlen = DIGEST_BUFSIZE_SHA256;
+	    break;
+#else
+	    return -1;
 #endif
-      
+	    
+	case DIGEST_TYPE_SHA384:
 #ifdef HAVE_SHA384_INIT
-    case DIGEST_TYPE_SHA384:
-      if (bufsize < DIGEST_BUFSIZE_SHA384) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      SHA384_Final(buf, &dp->ctx.sha384);
-      rlen = DIGEST_BUFSIZE_SHA384;
-      break;
+	    if (bufsize < DIGEST_BUFSIZE_SHA384) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    SHA384_Final(buf, &dp->ctx.sha384);
+	    rlen = DIGEST_BUFSIZE_SHA384;
+	    break;
+#else
+	    return -1;
 #endif
-      
+	    
+	case DIGEST_TYPE_SHA512:
 #ifdef HAVE_SHA512_INIT
-    case DIGEST_TYPE_SHA512:
-      if (bufsize < DIGEST_BUFSIZE_SHA512) {
-	errno = EOVERFLOW;
-	return -1;
-      }
-      SHA512_Final(buf, &dp->ctx.sha512);
-      rlen = DIGEST_BUFSIZE_SHA512;
-      break;
-    }
-    break;
+	    if (bufsize < DIGEST_BUFSIZE_SHA512) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    SHA512_Final(buf, &dp->ctx.sha512);
+	    rlen = DIGEST_BUFSIZE_SHA512;
+	    break;
+#else
+	    return -1;
 #endif
-
-  default:
-    errno = EINVAL;
-    return -1;
-  }
-  
-  dp->state = DIGEST_STATE_FINAL;
-  return rlen;
+	}
+	break;
+	
+    default:
+	errno = EINVAL;
+	return -1;
+    }
+    
+    dp->state = DIGEST_STATE_FINAL;
+    return rlen;
 }
 
 

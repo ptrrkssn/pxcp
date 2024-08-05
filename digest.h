@@ -44,6 +44,10 @@
 
 #include <sys/types.h>
 
+#ifdef HAVE_ZLIB_H
+#include <zlib.h>
+#endif
+
 #ifdef HAVE_MD5_H
 #include <md5.h>
 #endif
