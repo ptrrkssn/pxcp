@@ -84,6 +84,10 @@ _fsobj_open_flags(int flags) {
 	strcat(buf, ",EXCL");
     if (flags&O_SYNC)
 	strcat(buf, ",SYNC");
+#ifdef O_SEARCH
+    if (flags&O_SEARCH)
+	strcat(buf, ",SEARCH");
+#endif
 #ifdef O_DIRECT
     if (flags&O_DIRECT)
 	strcat(buf, ",DIRECT");
@@ -104,8 +108,8 @@ _fsobj_open_flags(int flags) {
     return buf;
 }
 
-static char *
-_mode_type2str(mode_t m) {
+char *
+_fsobj_mode_type2str(mode_t m) {
     switch (m & S_IFMT) {
     case S_IFDIR:
         return "Directory";
@@ -338,7 +342,11 @@ fsobj_open(FSOBJ *op,
     if (fd < 0 && errno == ELOOP && flags & O_SYMLINK)
 	fd = openat(FSOBJ_FD(dirp), name, flags&~O_NOFOLLOW, mode);
 #endif
-    if (f_debug)
+#ifdef O_SEARCH
+    if (fd < 0 && errno == ENOTDIR && flags & O_SEARCH)
+        fd = openat(FSOBJ_FD(dirp), name, flags&~O_SEARCH, mode);
+#endif
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%s) [op=%p, flags=%s]\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
                 FSOBJ_FD(dirp), name, flags, mode,
@@ -350,7 +358,7 @@ fsobj_open(FSOBJ *op,
         abort();
 
     fd = open(path, flags, mode);
-    if (f_debug)
+    if (f_debug > 1)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): open(%s, 0x%x, %04o) -> %d (%s)\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
                 path, flags|O_NOFOLLOW, mode,
@@ -454,7 +462,16 @@ fsobj_path(FSOBJ *op) {
       
     tp = op;
     for (tp = op; tp; tp = tp->parent) {
-	blen += strlen(tp->name)+1;
+        char *name = tp->name;
+
+        if (!tp->parent && name[1] == '\0') {
+	    if (name[0] == '.') 
+	        continue;
+	    if (name[0] == '/')
+	      name = "";
+	}
+      
+	blen += strlen(name)+1;
     }
 
     op->path = malloc(blen);
@@ -463,12 +480,20 @@ fsobj_path(FSOBJ *op) {
     op->path[--blen] = '\0';
 
     for (tp = op; tp; tp = tp->parent) {
-	size_t slen = strlen(tp->name);
+        char *name = tp->name;
 
+        if (!tp->parent && name[1] == '\0') {
+	    if (name[0] == '.') 
+	        continue;
+	    if (name[0] == '/')
+	      name = "";
+	}
+      
+	size_t slen = strlen(name);
 	if (tp != op)
 	    op->path[--blen] = '/';
 
-	memcpy(op->path+blen-slen, tp->name, slen);
+	memcpy(op->path+blen-slen, name, slen);
 	blen -= slen;
     }
 
@@ -639,7 +664,7 @@ fsobj_typestr(FSOBJ *op) {
     if (op->name == NULL)
         return "Init";
 
-    return _mode_type2str(op->stat.st_mode);
+    return _fsobj_mode_type2str(op->stat.st_mode);
 }
 
 

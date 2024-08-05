@@ -63,6 +63,7 @@
 #define MAP_NOCORE 0
 #endif
 
+int f_maxdepth = 0;
 int f_debug = 0;
 int f_verbose = 0;
 int f_noxdev = 0;
@@ -97,7 +98,7 @@ struct options {
     char *help;
 } options[] = {
     { 'a', &f_all,       "Archive mode (enables c,g,o,r,t,A,X options)" },
-    { 'd', &f_debug,     "Set debugging level" },
+    { 'd', &f_maxdepth,  "Max recursive depth" },
     { 'e', &f_exist,     "Only copy to existing targets" },
     { 'f', &f_force,     "Force updates" },
     { 'g', &f_groups,    "Copy object group" },
@@ -114,6 +115,7 @@ struct options {
     { 'w', &f_warnings,  "Display warnings/notices" },
     { 'x', &f_noxdev,    "Do not cross filesystems" },
     { 'A', &f_acls,      "Copy ACLs" },
+    { 'D', &f_debug,     "Set debugging level" },
     { 'F', &f_flags,     "Copy object flags" },
     { 'M', &f_mmap,      "Use mmap(2)" },
     { 'S', &f_stats,     "Print stats summary" },
@@ -123,7 +125,7 @@ struct options {
 
 char *argv0 = "pxcp";
 
-FSOBJ root_src, root_dst;
+FSOBJ src_base, dst_base;
 
 unsigned long n_scanned = 0;
 unsigned long n_added = 0;
@@ -131,6 +133,8 @@ unsigned long n_updated = 0;
 unsigned long n_deleted = 0;
 
 unsigned long long b_written = 0;
+
+int cur_depth = 0;
 
 
 #define MD_NEW    0x0001
@@ -497,7 +501,7 @@ dir_prune(FSOBJ *dp) {
 	if (f_recurse && S_ISDIR(d_obj.stat.st_mode)) {
 	    /* Recurse down */
 
-	    if (fsobj_equal(&d_obj, &root_src)) {
+	    if (fsobj_equal(&d_obj, &src_base)) {
 		fprintf(stderr, "%s: Error: %s: Infinite recursion\n",
 			argv0, fsobj_path(&d_obj));
 		rc = -1;
@@ -661,7 +665,7 @@ flags_clone(FSOBJ *src,
 int
 acls_clone(FSOBJ *src,
            FSOBJ *dst) {
-    int rc = 0, s_rc, d_rc;
+    int rc = 0, s_rc = -1, d_rc = -1;
     GACL s_acl, d_acl;
 
     
@@ -1038,21 +1042,40 @@ ts_text(struct timespec *ts,
 }
 
 int
-dir_list(FSOBJ *dirp,
+dir_list(FSOBJ *op,
          int level) {
     FSOBJ obj;
-    int rc, n = 0, ns = 0;
+    int rc;
 
-    fsobj_reopen(dirp, O_RDONLY|O_DIRECTORY);
+    
+    if (f_debug > 1) 
+      fprintf(stderr, "** dir_list(%s)\n", fsobj_path(op));
+    
+    fprintf(stderr, "%*s%s [t=%s, p=%04o, s=%llu, u=%d, g=%d]\n",
+	    level*2, "", fsobj_path(op),
+	    _fsobj_mode_type2str(op->stat.st_mode),
+	    op->stat.st_mode&ALLPERMS,
+	    (long long unsigned) op->stat.st_size,
+	    op->stat.st_uid,
+	    op->stat.st_gid);
+    
+    if (fsobj_typeof(op) == S_IFDIR && (!f_maxdepth || level < f_maxdepth)) {
+      if (fsobj_reopen(op, O_RDONLY|O_DIRECTORY) < 0)
+	return -1;
 
-    fsobj_init(&obj);
-    while ((rc = fsobj_readdir(dirp, &obj)) > 0) {
-	fprintf(stderr, "%*s%3d. %s [%o]\n", level*2, "", ++n, fsobj_path(&obj), (obj.stat.st_mode&S_IFMT));
-        if (fsobj_typeof(&obj) == S_IFDIR)
-            ns += dir_list(&obj,level+1);
+      fsobj_init(&obj);
+      while ((rc = fsobj_readdir(op, &obj)) > 0) {
+	rc = dir_list(&obj, level+1);
+	fsobj_reset(&obj);
+	if (rc < 0)
+	  break;
+      }
+      fsobj_fini(&obj);
+      if (rc < 0)
+	return -1;
     }
-    fsobj_fini(&obj);
-    return n+ns;
+
+    return 1+rc;
 }
 
 
@@ -1107,7 +1130,8 @@ times_clone(FSOBJ *src,
 
 int
 clone(FSOBJ *src,
-      FSOBJ *dst) {
+      FSOBJ *dst,
+      int level) {
     int rc = 0, s_type = -1, d_type = -1;
     int mdiff = 0;
     FSOBJ s_obj, d_obj;
@@ -1220,10 +1244,16 @@ clone(FSOBJ *src,
 
     switch (s_type) {
     case S_IFDIR:
+        if (f_maxdepth && level > f_maxdepth) {
+	  fprintf(stderr, "*** clone: Maxdepth (%d) reached, not doing subdirectory\n",
+		    f_maxdepth);
+	  break;
+	}
+	  
         if (f_debug)
-            fprintf(stderr, "*** clone: Doing subdirectory\n");
-
-        fsobj_init(&s_obj);
+	  fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n", level, f_maxdepth);
+ 
+	fsobj_init(&s_obj);
         fsobj_init(&d_obj);
 
         if (f_prune) {
@@ -1284,7 +1314,7 @@ clone(FSOBJ *src,
                 break;
             }
 
-            s_rc = clone(&s_obj, &d_obj);
+            s_rc = clone(&s_obj, &d_obj, level+1);
             if (s_rc < 0) {
                 if (f_debug)
                     fprintf(stderr, "*** clone: clone(%s, %s) -> %d\n",
@@ -1415,12 +1445,38 @@ clone(FSOBJ *src,
 }
 
 
+static void
+path2dirbase(char *path,
+	     char **dirname,
+	     char **basename) {
+    char *cp;
+    
+    cp = strrchr(path, '/');
+    if (cp) {
+      *cp++ = '\0';
+      
+      if (!*path)
+	*dirname = "/";
+      else
+	*dirname = path;
+      
+      if (*cp)
+	*basename = cp;
+      else
+	*basename = ".";
+    } else {
+      *dirname = ".";
+      *basename = path;
+    }
+}
+
 
 int
 main(int argc,
      char *argv[]) {
-    int i, j, k, rc = 0, c_rc;
-    char *s;
+    int i, k, rc = 0, c_rc;
+    char *s, *dirname, *name;
+    FSOBJ src_parent, dst_parent;
     
     argv0 = argv[0];
 
@@ -1429,15 +1485,18 @@ main(int argc,
       (void) sscanf(s, "%d", &f_debug);
     
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
-	for (j = 1; argv[i][j]; j++) {
-            int rv, *vp = NULL;
-            char c;
+        char *op, *cp = NULL;
+	
+	for (op = argv[i]+1; op && *op; op = cp) {
+	    int *vp;
+	    long v;
 
-	    for (k = 0; options[k].c != -1 && options[k].c != argv[i][j]; k++)
+	    
+	    for (k = 0; options[k].c != -1 && options[k].c != *op; k++)
 		;
 	    if (options[k].c == -1) {
 		fprintf(stderr, "%s: Error: -%c: Invalid option\n",
-			argv[0], argv[i][j]);
+			argv[0], *op);
 		exit(1);
 	    }
 
@@ -1450,40 +1509,35 @@ main(int argc,
 		exit(0);
 	    }
 
-	    rv = sscanf(argv[i]+j+1, "%d%c", vp, &c);
-	    if (rv < 0 && isdigit(argv[i][j+1])) {
-		fprintf(stderr, "%s: Error: %s: Scanning number: %s\n",
-			argv0, argv[i]+j+1, strerror(errno));
-		exit(1);
+	    v = strtol(op+1, &cp, 0);
+	    if (cp == op+1) {
+	      (*vp)++;
 	    }
+	    else {
+	        *vp = v;
 
-	    switch (rv) {
-	    case -1:
-	    case 0:
-		 (*vp)++;
-		 break;
-	    case 1:
-		break;
-	    case 2:
-		switch (tolower(c)) {
-		case 'k':
+		if (*cp) {
+		  switch (tolower(*cp)) {
+		  case 'k':
 		    *vp *= 1000;
 		    break;
-		case 'm':
+		  case 'm':
 		    *vp *= 1000000;
 		    break;
-		case 'g':
+		  case 'g':
 		    *vp *= 1000000000;
 		    break;
-		case 't':
+		  case 't':
 		    *vp *= 1000000000000;
 		    break;
-		default:
-		    fprintf(stderr, "%s: Error: -%s: Invalid prefix\n",
-			    argv0, argv[i]+j);
+		  default:
+		    fprintf(stderr, "%s: Error: %s: Invalid number suffix\n",
+			    argv0, cp);
 		    exit(1);
+		  }
+		  ++cp;
 		}
-		break;
+		op = cp;
 	    }
 	}
     }
@@ -1513,8 +1567,11 @@ main(int argc,
 	}
     }
 
-    fsobj_init(&root_src);
-    fsobj_init(&root_dst);
+    fsobj_init(&src_parent);
+    fsobj_init(&src_base);
+    
+    fsobj_init(&dst_parent);
+    fsobj_init(&dst_base);
 
     if (i >= argc) {
 	fprintf(stderr, "%s: Error: Missing required <source> argument\n",
@@ -1523,9 +1580,20 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_src, NULL, argv[i], O_PATH, 0) <= 0) {
-	fprintf(stderr, "%s: Error: %s: Open(source): %s\n",
-		argv[0], argv[i], strerror(errno));
+    clock_gettime(CLOCK_REALTIME, &t0);
+
+    path2dirbase(argv[i], &dirname, &name);
+    
+    if (fsobj_open(&src_parent, NULL, dirname, O_PATH, 0) <= 0) {
+      fprintf(stderr, "%s: Error: %s: Open(source directory): %s\n",
+	      argv[0], dirname, strerror(errno));
+      rc = 1;
+      goto Fail;
+    }
+      
+    if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
+	fprintf(stderr, "%s: Error: %s: Open(source object): %s\n",
+		argv[0], name, strerror(errno));
         rc = 1;
         goto Fail;
     }
@@ -1534,13 +1602,11 @@ main(int argc,
         if (f_debug) {
             int n;
 
-            puts("Source:");
-            n = dir_list(&root_src, 1);
+            printf("Directory Listing of %s:\n", fsobj_path(&src_base));
+            n = dir_list(&src_base, 1);
             printf("%d total objects\n", n);
 
-            fsobj_fini(&root_src);
-            fsobj_fini(&root_dst);
-            exit(0);
+	    goto End;
         }
 
 	fprintf(stderr, "%s: Error: Missing required <destination> argument\n",
@@ -1549,17 +1615,24 @@ main(int argc,
         goto Fail;
     }
 
-    if (fsobj_open(&root_dst, NULL, argv[i], O_PATH, root_src.stat.st_mode) < 0) {
-	fprintf(stderr, "%s: Error: %s: Open(destination): %s\n",
-		argv[0], argv[i], strerror(errno));
+    path2dirbase(argv[i], &dirname, &name);
+    
+    if (fsobj_open(&dst_parent, NULL, dirname, O_PATH, 0) <= 0) {
+      fprintf(stderr, "%s: Error: %s: Open(target directory): %s\n",
+	      argv[0], dirname, strerror(errno));
+      rc = 1;
+      goto Fail;
+    }
+      
+    if (fsobj_open(&dst_base, &dst_parent, name, O_PATH|O_CREAT, src_base.stat.st_mode) < 0) {
+	fprintf(stderr, "%s: Error: %s: Open(target): %s\n",
+		argv[0], name, strerror(errno));
         rc = 1;
         goto Fail;
     }
 
 
-    clock_gettime(CLOCK_REALTIME, &t0);
-
-    c_rc = clone(&root_src, &root_dst);
+    c_rc = clone(&src_base, &dst_base, 1);
     if (c_rc < 0) {
         rc = 1;
 	goto End;
@@ -1633,8 +1706,8 @@ main(int argc,
     }
 
  Fail:
-    fsobj_fini(&root_src);
-    fsobj_fini(&root_dst);
+    fsobj_fini(&src_base);
+    fsobj_fini(&dst_base);
 
     exit(rc);
 }

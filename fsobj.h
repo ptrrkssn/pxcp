@@ -49,10 +49,17 @@
 #define O_DIRECT 0
 #endif
 
+#ifndef ALLPERMS
+#define ALLPERMS 0x3
+#endif
+
 #ifndef O_PATH
 #ifdef O_SYMLINK
 /* MacOS doesn't have O_PATH, but we emulate it with O_SYMLINK */
 #define O_PATH O_SYMLINK
+#else
+/* O_SEARCH doesn't work for non-directories but we work around it */
+#define O_PATH O_SEARCH
 #endif
 #endif
 
@@ -195,6 +202,9 @@ extern int
 fsobj_chflags(FSOBJ *op,
               const char *np,
               unsigned long flags);
+
+extern char *
+_fsobj_mode_type2str(mode_t m);
 
 extern char *
 _fsobj_open_flags(int flags);

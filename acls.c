@@ -93,6 +93,7 @@ static int acl_flags_nfs4[] = {
 extern int f_debug;
 
 
+#ifdef HAVE_ACL_GET_ENTRY
 static int
 _acl_diff(acl_t src,
           acl_t dst) {
@@ -299,6 +300,7 @@ _acl_diff(acl_t src,
 
     return 0;
 }
+#endif
 
 
 
@@ -320,8 +322,12 @@ gacl_diff(GACL *src,
         return memcmp(src->a, dst->a, src->s);
     }
 #endif
-    
+
+#ifdef HAVE_ACL_GET_ENTRY
     return _acl_diff(src->a, dst->a);
+#else
+    return 0;
+#endif
 }
 
 
@@ -329,6 +335,10 @@ int
 gacl_get(GACL *ga,
          FSOBJ *op,
          acl_type_t t) {
+#ifdef HAVE_FACL
+  errno = ENOSYS;
+  return -1;
+#else
     acl_t a = NULL;
     
 
@@ -389,12 +399,17 @@ gacl_get(GACL *ga,
     ga->s = 0;
     ga->t = t;
     return 0;
+#endif
 }
 
 
 int
 gacl_set(FSOBJ *op,
          GACL *ga) {
+#ifdef HAVE_FACL
+    errno = ENOSYS;
+    return -1;
+#else
 #ifdef GACL_MAGIC_NFS4
     /* Linux */
     if (ga->t == ACL_TYPE_NFS4) {
@@ -422,8 +437,9 @@ gacl_set(FSOBJ *op,
     return acl_set_file(fsobj_path(op), ga->t, ga->a);
 # else
     errno = ENOSYS;
-    return NULL;
+    return -1;
 # endif
+#endif
 #endif
 }
 
@@ -442,7 +458,9 @@ gacl_free(GACL *ga) {
     }
 #endif
 
+#ifndef HAVE_FACL
     if (ga->a)
         acl_free(ga->a);
+#endif
     memset(ga, 0, sizeof(*ga));
 }
