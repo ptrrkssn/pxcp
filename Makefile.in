@@ -109,7 +109,7 @@ check-4: setup-check
 
 check-5: setup-check
 	@echo ""; echo "--- Check 5: Cloning t/s -> t/d (again, with prune)"
-	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAXp  t/s t/d && echo "--> OK"
+	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAXpm  t/s t/d && echo "--> OK"
 
 check-6: check-5
 	@echo ""; echo "--- Check 6: ls -alR"
