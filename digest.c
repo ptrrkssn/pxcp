@@ -39,31 +39,35 @@
 
 
 DIGEST_LIST digests[] = {
-    { "NONE",     DIGEST_TYPE_NONE },
-    { "XOR",      DIGEST_TYPE_XOR },
+    { "NONE",       DIGEST_TYPE_NONE },
+    { "FLETCHER16", DIGEST_TYPE_FLETCHER16 },
 #ifdef HAVE_ADLER32_Z
-    { "ADLER32",  DIGEST_TYPE_ADLER32 },
+    { "ADLER32",    DIGEST_TYPE_ADLER32 },
 #endif
 #ifdef HAVE_CRC32_Z
-    { "CRC32",  DIGEST_TYPE_CRC32 },
+    { "CRC32",      DIGEST_TYPE_CRC32 },
 #endif
 #ifdef HAVE_MD5INIT
-    { "MD5",      DIGEST_TYPE_MD5 },
+    { "MD5",        DIGEST_TYPE_MD5 },
 #endif
 #ifdef HAVE_SKEIN256_INIT
-    { "SKEIN256", DIGEST_TYPE_SKEIN256 },
+    { "SKEIN256",   DIGEST_TYPE_SKEIN256 },
 #endif
 #ifdef HAVE_SHA256_INIT
-    { "SHA256",   DIGEST_TYPE_SHA256 },
+    { "SHA256",     DIGEST_TYPE_SHA256 },
 #endif
 #ifdef HAVE_SHA384_INIT
-    { "SHA384",   DIGEST_TYPE_SHA384 },
+    { "SHA384",     DIGEST_TYPE_SHA384 },
 #endif
 #ifdef HAVE_SHA512_INIT
-    { "SHA512",   DIGEST_TYPE_SHA512 },
+    { "SHA512",     DIGEST_TYPE_SHA512 },
 #endif
-    { NULL,       DIGEST_TYPE_INVALID },
+    { "XOR8",       DIGEST_TYPE_XOR8 },
+    { NULL,         DIGEST_TYPE_INVALID },
 };
+
+
+
 
 
 DIGEST_TYPE
@@ -95,76 +99,116 @@ digests_print(FILE *fp,
     for (i = 0; digests[i].name; i++) {
 	if (i > 0)
 	    fputs(sep, fp);
-	fputs(digests[i].name, fp);
+	fprintf(fp, "%s(%d)", digests[i].name, i);
     }
     putc('\n', fp);
 }
+
+static void
+fletcher16_init(FLETCHER16_CTX *ctx) {
+    ctx->c0 = 0;
+    ctx->c1 = 0;
+}
+
+static void
+fletcher16_update(FLETCHER16_CTX *ctx,
+                  const uint8_t *data,
+                  size_t len) {
+    if (!data)
+        return;
+
+    while (len > 0) {
+        size_t blocklen = len;
+        
+        if (blocklen > 5802) {
+            blocklen = 5802;
+        }
+        len -= blocklen;
+
+        do {
+            ctx->c0 += *data++;
+            ctx->c1 += ctx->c0;
+        } while (--blocklen);
+        ctx->c0 %= 255;
+        ctx->c1 %= 255;
+    }
+}
+
+static uint16_t
+fletcher16_final(FLETCHER16_CTX *ctx) {
+    return (ctx->c1 << 8 | ctx->c0);
+}
+
 
 
 int
 digest_init(DIGEST *dp,
             DIGEST_TYPE type) {
-  memset(dp, 0, sizeof(*dp));
-
-  dp->state = DIGEST_STATE_NONE;
-  dp->type = type;
-  
-  switch (dp->type) {
-  case DIGEST_TYPE_NONE:
-    break;
+    memset(dp, 0, sizeof(*dp));
     
-  case DIGEST_TYPE_XOR:
-    dp->ctx.xor8 = 0;
-    break;
-
+    dp->state = DIGEST_STATE_NONE;
+    dp->type = type;
+    
+    switch (dp->type) {
+    case DIGEST_TYPE_NONE:
+        break;
+        
+    case DIGEST_TYPE_XOR8:
+        dp->ctx.xor8 = 0;
+        break;
+        
+    case DIGEST_TYPE_FLETCHER16:
+        fletcher16_init(&dp->ctx.fletcher16);
+        break;
+        
 #ifdef HAVE_ADLER32_Z
-  case DIGEST_TYPE_ADLER32:
-    dp->ctx.crc32 = adler32_z(0L, NULL, 0);
-    break;
+    case DIGEST_TYPE_ADLER32:
+        dp->ctx.crc32 = adler32_z(0L, NULL, 0);
+        break;
 #endif
-
+        
 #ifdef HAVE_CRC32_Z
-  case DIGEST_TYPE_CRC32:
-    dp->ctx.adler32 = crc32_z(0L, NULL, 0);
-    break;
+    case DIGEST_TYPE_CRC32:
+        dp->ctx.adler32 = crc32_z(0L, NULL, 0);
+        break;
 #endif
-
+        
 #ifdef HAVE_MD5INIT
-  case DIGEST_TYPE_MD5:
-    MD5Init(&dp->ctx.md5);
-    break;
+    case DIGEST_TYPE_MD5:
+        MD5Init(&dp->ctx.md5);
+        break;
 #endif
-
+        
 #ifdef HAVE_SKEIN256_INIT
-  case DIGEST_TYPE_SKEIN256:
-    SKEIN256_Init(&dp->ctx.skein256);
-    break;
+    case DIGEST_TYPE_SKEIN256:
+        SKEIN256_Init(&dp->ctx.skein256);
+        break;
 #endif
-
+        
 #ifdef HAVE_SHA256_INIT
-  case DIGEST_TYPE_SHA256:
-    SHA256_Init(&dp->ctx.sha256);
-    break;
+    case DIGEST_TYPE_SHA256:
+        SHA256_Init(&dp->ctx.sha256);
+        break;
 #endif
-
+        
 #ifdef HAVE_SHA384_INIT
-  case DIGEST_TYPE_SHA384:
-    SHA384_Init(&dp->ctx.sha384);
-    break;
+    case DIGEST_TYPE_SHA384:
+        SHA384_Init(&dp->ctx.sha384);
+        break;
 #endif
-
+        
 #ifdef HAVE_SHA512_INIT
-  case DIGEST_TYPE_SHA512:
-    SHA512_Init(&dp->ctx.sha512);
-    break;
+    case DIGEST_TYPE_SHA512:
+        SHA512_Init(&dp->ctx.sha512);
+        break;
 #endif
+        
+    default:
+        return -1;
+    }
     
-  default:
-    return -1;
-  }
-
-  dp->state = DIGEST_STATE_INIT;
-  return 0;
+    dp->state = DIGEST_STATE_INIT;
+    return 0;
 }
 
 
@@ -174,71 +218,76 @@ digest_update(DIGEST *dp,
 	      const unsigned char *buf,
 	      size_t bufsize) {
 
-  if (!dp)
-    return -1;
+    if (!dp)
+        return -1;
 
-  switch (dp->state) {
-  case DIGEST_STATE_UPDATE:
-    switch (dp->type) {
+    switch (dp->state) {
+    case DIGEST_STATE_INIT:
+    case DIGEST_STATE_UPDATE:
+        switch (dp->type) {
       
-    case DIGEST_TYPE_XOR:
-      while (bufsize-- > 0)
-	dp->ctx.xor8 |= *buf++;
-      break;
-      
+        case DIGEST_TYPE_XOR8:
+            while (bufsize-- > 0)
+                dp->ctx.xor8 |= *buf++;
+            break;
+
+        case DIGEST_TYPE_FLETCHER16:
+            fletcher16_update(&dp->ctx.fletcher16, buf, bufsize);
+            break;
+            
 #ifdef HAVE_ADLER32_Z
-    case DIGEST_TYPE_ADLER32:
-      dp->ctx.adler32 = adler32_z(dp->ctx.adler32, buf, bufsize);
-      break;
+        case DIGEST_TYPE_ADLER32:
+            dp->ctx.adler32 = adler32_z(dp->ctx.adler32, buf, bufsize);
+            break;
 #endif
 
 #ifdef HAVE_CRC32_Z
-    case DIGEST_TYPE_CRC32:
-      dp->ctx.adler32 = crc32_z(dp->ctx.crc32, buf, bufsize);
-      break;
+        case DIGEST_TYPE_CRC32:
+            dp->ctx.adler32 = crc32_z(dp->ctx.crc32, buf, bufsize);
+            break;
 #endif
 
-#ifdef HAVE_MD5INI
-    case DIGEST_TYPE_MD5:
-      MD5Update(&dp->ctx.md5, buf, bufsize);
-      break;
+#ifdef HAVE_MD5INIT
+        case DIGEST_TYPE_MD5:
+            MD5Update(&dp->ctx.md5, buf, bufsize);
+            break;
 #endif
 
 #ifdef HAVE_SKEIN256_INIT
-    case DIGEST_TYPE_SKEIN256:
-      SKEIN256_Update(&dp->ctx.skein256, buf, bufsize);
-      break;
+        case DIGEST_TYPE_SKEIN256:
+            SKEIN256_Update(&dp->ctx.skein256, buf, bufsize);
+            break;
 #endif
 
 #ifdef HAVE_SHA256_INIT
-    case DIGEST_TYPE_SHA256:
-      SHA256_Update(&dp->ctx.sha256, buf, bufsize);
-      break;
+        case DIGEST_TYPE_SHA256:
+            SHA256_Update(&dp->ctx.sha256, buf, bufsize);
+            break;
 #endif
 
 #ifdef HAVE_SHA384_INIT
-    case DIGEST_TYPE_SHA384:
-      SHA384_Update(&dp->ctx.sha384, buf, bufsize);
-      break;
+        case DIGEST_TYPE_SHA384:
+            SHA384_Update(&dp->ctx.sha384, buf, bufsize);
+            break;
 #endif
 
 #ifdef HAVE_SHA512_INIT
-    case DIGEST_TYPE_SHA512:
-      SHA512_Update(&dp->ctx.sha512, buf, bufsize);
-      break;
+        case DIGEST_TYPE_SHA512:
+            SHA512_Update(&dp->ctx.sha512, buf, bufsize);
+            break;
 #endif
       
-    default:
-      return -1;
-    }
-    break;
+        default:
+            return -1;
+        }
+        break;
     
-  default:
-    return -1;
-  }
+    default:
+        return -1;
+    }
   
-  dp->state = DIGEST_STATE_UPDATE;
-  return 0;
+    dp->state = DIGEST_STATE_UPDATE;
+    return 0;
 }
 
 ssize_t
@@ -262,15 +311,24 @@ digest_final(DIGEST *dp,
 	    rlen = 0;
 	    break;
 	    
-	case DIGEST_TYPE_XOR:
-	    if (bufsize < DIGEST_BUFSIZE_XOR) {
+	case DIGEST_TYPE_XOR8:
+	    if (bufsize < DIGEST_BUFSIZE_XOR8) {
 		errno = EOVERFLOW;
 		return -1;
 	    }
 	    * (uint8_t *) buf = dp->ctx.xor8;
-	    rlen = DIGEST_BUFSIZE_XOR;
+	    rlen = DIGEST_BUFSIZE_XOR8;
 	    break;
-	    
+
+        case DIGEST_TYPE_FLETCHER16:
+	    if (bufsize < DIGEST_BUFSIZE_FLETCHER16) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    * (uint16_t *) buf = htons(fletcher16_final(&dp->ctx.fletcher16));
+	    rlen = DIGEST_BUFSIZE_FLETCHER16;
+            break;
+            
 	case DIGEST_TYPE_ADLER32:
 #ifdef HAVE_ADLER32_Z
 	    if (bufsize < DIGEST_BUFSIZE_ADLER32) {
@@ -376,28 +434,28 @@ digest_final(DIGEST *dp,
 
 void
 digest_destroy(DIGEST *dp) {
-  unsigned char tbuf[DIGEST_BUFSIZE_MAX];
+    unsigned char tbuf[DIGEST_BUFSIZE_MAX];
 
-  (void) digest_final(dp, tbuf, sizeof(tbuf));
-  memset(dp, 0, sizeof(*dp));
-  dp->state = DIGEST_STATE_NONE;
-  dp->type  = DIGEST_TYPE_NONE;
+    (void) digest_final(dp, tbuf, sizeof(tbuf));
+    memset(dp, 0, sizeof(*dp));
+    dp->state = DIGEST_STATE_NONE;
+    dp->type  = DIGEST_TYPE_NONE;
 }
 
 DIGEST_TYPE
 digest_typeof(DIGEST *dp) {
-  if (!dp)
-    return DIGEST_TYPE_NONE;
+    if (!dp)
+        return DIGEST_TYPE_NONE;
   
-  return dp->type;
+    return dp->type;
 }
 
 DIGEST_STATE
 digest_stateof(DIGEST *dp) {
-  if (!dp)
-    return DIGEST_STATE_NONE;
+    if (!dp)
+        return DIGEST_STATE_NONE;
   
-  return dp->state;
+    return dp->state;
 }
 
 

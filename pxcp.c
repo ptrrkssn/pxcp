@@ -106,18 +106,17 @@ get_digest(char *start,
     int v;
 
     v = digest_str2type(start);
-    fprintf(stderr, "get_digest: digest_str2type(%s) -> %d\n", start, v);
-    if (v < 0) {
+    if (v < 0)
         v = get_int(start, next);
-	fprintf(stderr, "get_digest: get_int(%s) -> %d\n", start, v);
+    else {
+        if (v >= 0) {
+            while (*start)
+                ++start;
+        }
+        
+        *next = start;
     }
     
-    if (v >= 0) {
-        while (*start)
-            ++start;
-    }
-
-    *next = start;
     return v;
 }
 
@@ -256,13 +255,11 @@ symlink_clone(FSOBJ *src,
 
     if (f_force || d_plen < 0 || strcmp(s_pbuf, d_pbuf) != 0) {
 	if (!f_dryrun) {
-#if 0
             if (d_plen >= 0 && fsobj_delete(dst, NULL) < 0) {
                 fprintf(stderr, "%s: Error: %s: Delete(symlink): %s\n",
                         argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
-#endif
             
 	    if (fsobj_symlink(dst, NULL, s_pbuf) < 0) {
 		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
@@ -281,6 +278,7 @@ symlink_clone(FSOBJ *src,
 
     return rc;
 }
+
 
 
 
@@ -1113,6 +1111,19 @@ ts_text(struct timespec *ts,
     return buf;
 }
 
+static void
+p_buf(FILE *fp,
+      const uint8_t *buf,
+      size_t len) {
+    putc('{', fp);
+    while (len-- > 0) {
+        fprintf(fp, "%02x", *buf++);
+        if (len > 0)
+            putc(' ', fp);
+    }
+    putc('}', fp);
+}
+
 int
 dir_list(FSOBJ *op,
          int level) {
@@ -1123,13 +1134,29 @@ dir_list(FSOBJ *op,
     if (f_debug > 1) 
 	fprintf(stderr, "** dir_list(%s)\n", fsobj_path(op));
     
-    printf("%*s%s [t=%s, p=%04o, s=%llu, u=%d, g=%d]\n",
-	   level*2, "", fsobj_path(op),
-	   _fsobj_mode_type2str(op->stat.st_mode),
-	   op->stat.st_mode&ALLPERMS,
-	   (long long unsigned) op->stat.st_size,
-	   op->stat.st_uid,
-	   op->stat.st_gid);
+    printf("%*s%s",
+	   level*2, "", fsobj_path(op));
+
+    if (f_checksum && S_ISREG(op->stat.st_mode)) {
+        uint8_t digest[DIGEST_BUFSIZE_MAX];
+        ssize_t len;
+        
+        len = fsobj_digest(op, f_checksum, digest, sizeof(digest));
+        if (len >= 0) {
+            putchar('\t');
+            p_buf(stdout, digest, len);
+        }
+    }
+
+    if (f_verbose)
+        printf("\t{t=%s, p=%04o, s=%llu, u=%d, g=%d}",
+               _fsobj_mode_type2str(op->stat.st_mode),
+               op->stat.st_mode&ALLPERMS,
+               (long long unsigned) op->stat.st_size,
+               op->stat.st_uid,
+               op->stat.st_gid);
+        
+    putchar('\n');
     
     if (!f_recurse || fsobj_typeof(op) != S_IFDIR || (f_maxdepth && level > f_maxdepth))
 	return 1;
@@ -1375,9 +1402,6 @@ clone(FSOBJ *src,
                 fsobj_reset(&d_obj);
             }
             fsobj_reset(&s_obj);
-#if 0
-            fsobj_reset(&d_obj);
-#endif
         }
 
 	if (f_recurse) {
@@ -1569,8 +1593,13 @@ usage(void) {
                options[k].c,
                options[k].l,
                options[k].help);
-    puts("\nAll options may optionally take a numeric argument (-v3 or --verbose=3).");
-    printf("\nDigests:\n  ");
+    
+    puts("\nAll options may optionally take a argument. Short options only numeric (-v3)");
+    puts("Long options numeric or string (--depth=1k, --checksum=sha256).");
+    puts("Numbers may be specified as decimal, octal (preceed with 0) or hexadecimal (preceed 0x)");
+    puts("and with an optional suffix (k, m, g, t) multiplier.");
+
+    printf("\nAvailable checksum digests:\n  ");
     digests_print(stdout, ", ");
     exit(0);
 }
@@ -1630,8 +1659,12 @@ main(int argc,
             } else {
                 long v;
                 char *cp;
-                
+
+#if 0
                 v = (*options[k].f)(vs, &cp);
+#else
+                v = get_int(vs, &cp);
+#endif
                 if (cp == vs) {
                     *--vs = '=';
                     fprintf(stderr, "%s: Error: %s: Missing or invalid switch value\n",

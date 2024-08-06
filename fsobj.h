@@ -41,6 +41,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 
+
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
 #endif
@@ -233,5 +234,11 @@ fsobj_set_attr(FSOBJ *op,
 	       const char *an,
 	       const void *data,
 	       size_t nbytes);
+
+extern ssize_t
+fsobj_digest(FSOBJ *op,
+             int type,
+             uint8_t *result,
+             size_t size);
 
 #endif

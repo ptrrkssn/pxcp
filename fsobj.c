@@ -32,10 +32,6 @@
  */
 
 #include "config.h"
-#include "fsobj.h"
-#include "misc.h"
-
-extern int f_debug;
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +44,7 @@ extern int f_debug;
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/time.h>
+#include <sys/mman.h>
 
 #if HAVE_SYS_EXTATTR_H
 #include <sys/extattr.h>
@@ -56,6 +53,10 @@ extern int f_debug;
 #include <sys/xattr.h>
 #endif
 
+#include "fsobj.h"
+#include "misc.h"
+#include "digest.h"
+
 #ifndef ENOATTR
 #define ENOATTR ENODATA
 #endif
@@ -63,6 +64,9 @@ extern int f_debug;
 #ifndef AT_RESOLVE_BENEATH
 #define AT_RESOLVE_BENEATH 0
 #endif
+
+
+extern int f_debug;
 
 
 char *
@@ -888,14 +892,6 @@ fsobj_delete(FSOBJ *op,
         return rc;
 
     if (op != dirp) {
-#if 0
-        if (op->parent) {
-            op->parent->refcnt--;
-            if (op->parent->refs[op->parent->refcnt] != op) {
-                fprintf(stderr, "** fsobj_delete: FOO\n");
-            }
-        }
-#endif
         close(op->fd);
         op->fd = -1;
         memset(&op->stat, 0, sizeof(op->stat));
@@ -2370,3 +2366,42 @@ fsobj_delete_attr(FSOBJ *op,
     
     return rc;
 }
+
+
+ssize_t
+fsobj_digest(FSOBJ *op,
+             int type,
+             uint8_t *result,
+             size_t size) {
+    DIGEST digest;
+    uint8_t *bufp = NULL;
+    ssize_t rc = -1;
+    
+
+    if (fsobj_reopen(op, O_RDONLY) < 0)
+        return -1;
+    
+    digest_init(&digest, type);
+
+    if (op->stat.st_size > 0) {
+        bufp = (uint8_t *) mmap(NULL, op->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, op->fd, 0);
+        if (bufp == MAP_FAILED) {
+            rc = -1;
+            goto End;
+        }
+        
+        /* Ignore errors */
+        (void) madvise(bufp, op->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+
+        digest_update(&digest, bufp, op->stat.st_size);
+    }
+
+    rc = digest_final(&digest, result, size);
+    
+ End:
+    if (bufp)
+        munmap(bufp, op->stat.st_size);
+    
+    return rc;
+}
+
