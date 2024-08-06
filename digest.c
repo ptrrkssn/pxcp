@@ -41,6 +41,9 @@
 DIGEST_LIST digests[] = {
     { "NONE",       DIGEST_TYPE_NONE },
     { "FLETCHER16", DIGEST_TYPE_FLETCHER16 },
+    { "FLETCHER32", DIGEST_TYPE_FLETCHER32 },
+    { "XOR8",       DIGEST_TYPE_XOR8 },
+
 #ifdef HAVE_ADLER32_Z
     { "ADLER32",    DIGEST_TYPE_ADLER32 },
 #endif
@@ -62,7 +65,6 @@ DIGEST_LIST digests[] = {
 #ifdef HAVE_SHA512_INIT
     { "SHA512",     DIGEST_TYPE_SHA512 },
 #endif
-    { "XOR8",       DIGEST_TYPE_XOR8 },
     { NULL,         DIGEST_TYPE_INVALID },
 };
 
@@ -97,15 +99,24 @@ digests_print(FILE *fp,
     int i;
 
     for (i = 0; digests[i].name; i++) {
-	if (i > 0)
-	    fputs(sep, fp);
-	fprintf(fp, "%s(%d)", digests[i].name, i);
+        if (sep) {
+            if (i > 0)
+                fputs(sep, fp);
+            fprintf(fp, "%s(%d)", digests[i].name, digests[i].type);
+        } else
+            fprintf(fp, "  %2d. %s\n", digests[i].type, digests[i].name);
     }
     putc('\n', fp);
 }
 
 static void
 fletcher16_init(FLETCHER16_CTX *ctx) {
+    ctx->c0 = 0;
+    ctx->c1 = 0;
+}
+
+static void
+fletcher32_init(FLETCHER32_CTX *ctx) {
     ctx->c0 = 0;
     ctx->c1 = 0;
 }
@@ -134,11 +145,43 @@ fletcher16_update(FLETCHER16_CTX *ctx,
     }
 }
 
+static void
+fletcher32_update(FLETCHER32_CTX *ctx,
+                  const uint16_t *data,
+                  size_t len) {
+    if (!data)
+        return;
+    
+    len = (len + 1) & ~1;      /* Round up len to words */
+ 
+    /* We similarly solve for n > 0 and n * (n+1) / 2 * (2^16-1) < (2^32-1) here. */
+    /* On modern computers, using a 64-bit c0/c1 could allow a group size of 23726746. */
+    while (len > 0) {
+        size_t blocklen = len;
+        
+        if (blocklen > 360*2) {
+            blocklen = 360*2;
+        }
+        len -= blocklen;
+        do {
+            ctx->c0 += *data++;
+            ctx->c1 += ctx->c0;
+        } while ((blocklen -= 2));
+        ctx->c0 %= 65535;
+        ctx->c1 %= 65535;
+    }
+}
+
+
 static uint16_t
 fletcher16_final(FLETCHER16_CTX *ctx) {
     return (ctx->c1 << 8 | ctx->c0);
 }
 
+static uint32_t
+fletcher32_final(FLETCHER32_CTX *ctx) {
+    return (ctx->c1 << 16 | ctx->c0);
+}
 
 
 int
@@ -159,6 +202,10 @@ digest_init(DIGEST *dp,
         
     case DIGEST_TYPE_FLETCHER16:
         fletcher16_init(&dp->ctx.fletcher16);
+        break;
+        
+    case DIGEST_TYPE_FLETCHER32:
+        fletcher32_init(&dp->ctx.fletcher32);
         break;
         
 #ifdef HAVE_ADLER32_Z
@@ -232,7 +279,11 @@ digest_update(DIGEST *dp,
             break;
 
         case DIGEST_TYPE_FLETCHER16:
-            fletcher16_update(&dp->ctx.fletcher16, buf, bufsize);
+            fletcher16_update(&dp->ctx.fletcher16, (uint8_t *) buf, bufsize);
+            break;
+            
+        case DIGEST_TYPE_FLETCHER32:
+            fletcher32_update(&dp->ctx.fletcher32, (uint16_t *) buf, bufsize);
             break;
             
 #ifdef HAVE_ADLER32_Z
@@ -327,6 +378,15 @@ digest_final(DIGEST *dp,
 	    }
 	    * (uint16_t *) buf = htons(fletcher16_final(&dp->ctx.fletcher16));
 	    rlen = DIGEST_BUFSIZE_FLETCHER16;
+            break;
+            
+        case DIGEST_TYPE_FLETCHER32:
+	    if (bufsize < DIGEST_BUFSIZE_FLETCHER32) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    * (uint32_t *) buf = htons(fletcher32_final(&dp->ctx.fletcher32));
+	    rlen = DIGEST_BUFSIZE_FLETCHER32;
             break;
             
 #ifdef HAVE_ADLER32_Z

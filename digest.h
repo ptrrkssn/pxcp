@@ -73,33 +73,42 @@ typedef struct fletcher16_ctx {
     uint32_t c1;
 } FLETCHER16_CTX;
 
+typedef struct fletcher32_ctx {
+    uint32_t c0;
+    uint32_t c1;
+} FLETCHER32_CTX;
+
 
 typedef enum {
 	      DIGEST_TYPE_INVALID    = -1,
-	      DIGEST_TYPE_NONE       = 0,
-              DIGEST_TYPE_FLETCHER16 = 1,
+	      DIGEST_TYPE_NONE       =  0,
+              DIGEST_TYPE_FLETCHER16 =  1,
+              DIGEST_TYPE_FLETCHER32 =  2,
+
+              /* This one is a simple XOR of all bytes in a file and is really bad, don't use */
+	      DIGEST_TYPE_XOR8       = 11,
+              
 #ifdef HAVE_ADLER32_Z
-	      DIGEST_TYPE_ADLER32,
+	      DIGEST_TYPE_ADLER32    = 21,
 #endif
 #ifdef HAVE_CRC32_Z
-	      DIGEST_TYPE_CRC32,
+	      DIGEST_TYPE_CRC32      = 22,
 #endif
 #ifdef HAVE_MD5INIT
-	      DIGEST_TYPE_MD5,
+	      DIGEST_TYPE_MD5        = 31,
 #endif
 #ifdef HAVE_SKEIN256_INIT
-	      DIGEST_TYPE_SKEIN256,
+	      DIGEST_TYPE_SKEIN256   = 41,
 #endif
 #ifdef HAVE_SHA256_INIT
-	      DIGEST_TYPE_SHA256,
+	      DIGEST_TYPE_SHA256     = 51,
 #endif
 #ifdef HAVE_SHA384_INIT
-	      DIGEST_TYPE_SHA384,
+	      DIGEST_TYPE_SHA384     = 52,
 #endif
 #ifdef HAVE_SHA512_INIT
-	      DIGEST_TYPE_SHA512,
+	      DIGEST_TYPE_SHA512     = 53,
 #endif
-	      DIGEST_TYPE_XOR8,
 } DIGEST_TYPE;
 
 typedef struct {
@@ -119,24 +128,31 @@ typedef struct digest {
     DIGEST_TYPE  type;
     DIGEST_STATE state;
     union {
-        uint8_t      xor8;
         FLETCHER16_CTX fletcher16;
-        uint32_t     crc32;
-        uint32_t     adler32;
+        FLETCHER32_CTX fletcher32;
+        uint8_t        xor8;
+
+#ifdef HAVE_ADLER32_Z
+        uint32_t       adler32;
+#endif
+#ifdef HAVE_CRC32_Z        
+        uint32_t       crc32;
+#endif
+        
 #ifdef HAVE_MD5INIT
-        MD5_CTX      md5;
+        MD5_CTX        md5;
 #endif
 #ifdef HAVE_SKEIN256_INIT
-        SKEIN256_CTX skein256;
+        SKEIN256_CTX   skein256;
 #endif
 #ifdef HAVE_SHA256_INIT
-        SHA256_CTX   sha256;
+        SHA256_CTX     sha256;
 #endif
 #ifdef HAVE_SHA384_INIT
-        SHA384_CTX   sha384;
+        SHA384_CTX     sha384;
 #endif
 #ifdef HAVE_SHA512_INIT
-        SHA512_CTX   sha512;
+        SHA512_CTX     sha512;
 #endif
     } ctx;
 } DIGEST;
@@ -147,6 +163,7 @@ typedef struct digest {
  */
 #define DIGEST_BUFSIZE_XOR8        sizeof(uint8_t)
 #define DIGEST_BUFSIZE_FLETCHER16  sizeof(uint16_t)
+#define DIGEST_BUFSIZE_FLETCHER32  sizeof(uint32_t)
 #define DIGEST_BUFSIZE_ADLER32     sizeof(uint32_t)
 #define DIGEST_BUFSIZE_CRC32       sizeof(uint32_t)
 #define DIGEST_BUFSIZE_MD5         16

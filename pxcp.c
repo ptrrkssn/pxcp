@@ -62,6 +62,7 @@
 
 int f_maxdepth = 0;
 int f_debug = 0;
+int f_help = 0;
 int f_verbose = 0;
 int f_noxdev = 0;
 int f_dryrun = 0;
@@ -131,7 +132,7 @@ struct options {
     { 'e', "exist",      &f_exist,       get_int,     "Only copy to existing targets" },
     { 'f', "force",      &f_force,       get_int,     "Force updates" },
     { 'g', "groups",     &f_groups,      get_int,     "Copy object group" },
-    { 'h', "help",       NULL,           NULL,        "Display usage information" },
+    { 'h', "help",       &f_help,        get_int,     "Display usage information" },
     { 'i', "ignore",     &f_ignore,      get_int,     "Ignore non-fatal errors and continue" },
     { 'm', "metaonly",   &f_metaonly,    get_int,     "Only copy metadata" },
     { 'n', "dryrun",     &f_dryrun,      get_int,     "Enable dry-run mode" },
@@ -1585,7 +1586,7 @@ usage(void) {
     int k;
 
     
-    printf("Usage:\n  %s [options] <src> <dst>\n\nOptions:\n", argv0);
+    printf("Usage:\n  %s [options] <src> [.. <src-N>] [<dst>]\n\nOptions:\n", argv0);
     for (k = 0; options[k].c != -1; k++)
         printf("  -%c    --%-10s    %s\n",
                options[k].c,
@@ -1597,8 +1598,9 @@ usage(void) {
     puts("Numbers may be specified as decimal, octal (preceed with 0) or hexadecimal (preceed 0x)");
     puts("and with an optional suffix (k, m, g, t) multiplier.");
 
-    printf("\nAvailable checksum digests:\n  ");
-    digests_print(stdout, ", ");
+    printf("\nAvailable checksum digests:\n");
+    digests_print(stdout, NULL);
+    
     exit(0);
 }
 
@@ -1750,6 +1752,9 @@ main(int argc,
 	printf("[%s - Copyright (c) Peter Eriksson <pen@lysator.liu.se>]\n",
 	       PACKAGE_STRING);
 
+    if (f_help)
+        usage();
+    
     if (f_all) {
 	f_owners     += f_all;
 	f_groups     += f_all;
