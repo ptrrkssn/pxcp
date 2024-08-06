@@ -470,7 +470,8 @@ char *
 fsobj_path(FSOBJ *op) {
     size_t blen = 0;
     FSOBJ *tp;
-
+    int i;
+    
 
     if (!op)
         return ".";
@@ -479,8 +480,12 @@ fsobj_path(FSOBJ *op) {
     if (op->magic != FSOBJ_MAGIC)
         abort();
 
-    if (op->path)
-	return op->path;
+    if (op->path) {
+        /* Skip leading ./ */
+        for (i = 0; op->path[i] == '.' && op->path[i+1] == '/'; i+=2)
+	    ;
+        return op->path+i;
+    }
 
     if (!op->name)
       return NULL;
@@ -497,6 +502,7 @@ fsobj_path(FSOBJ *op) {
 	blen += strlen(name)+1;
     }
 
+    
     op->path = malloc(blen);
     if (!op->path)
 	return NULL;
@@ -518,7 +524,10 @@ fsobj_path(FSOBJ *op) {
 	blen -= slen;
     }
 
-    return op->path;
+    /* Skip leading ./ */
+    for (i = 0; op->path[i] == '.' && op->path[i+1] == '/'; i+=2)
+       ;
+    return op->path+i;
 }
 
 
