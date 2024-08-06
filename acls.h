@@ -39,6 +39,13 @@
 
 #include <sys/types.h>
 
+#ifdef HAVE_STDINT_H
+#include <stdint.h>
+#endif
+#ifdef HAVE_INTTYPES_H
+#include <inttypes.h>
+#endif
+
 #if HAVE_SYS_ACL_H
 #include <sys/acl.h>
 #endif

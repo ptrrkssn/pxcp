@@ -46,6 +46,13 @@
 #include <sys/time.h>
 #include <sys/mman.h>
 
+#ifdef HAVE_STDINT_H
+#include <stdint.h>
+#endif
+#ifdef HAVE_INTTYPES_H
+#include <inttypes.h>
+#endif
+
 #if HAVE_SYS_EXTATTR_H
 #include <sys/extattr.h>
 #endif
@@ -2375,7 +2382,7 @@ fsobj_delete_attr(FSOBJ *op,
 ssize_t
 fsobj_digest(FSOBJ *op,
              int type,
-             uint8_t *result,
+             void *result,
              size_t size) {
     DIGEST digest;
     uint8_t *bufp = NULL;

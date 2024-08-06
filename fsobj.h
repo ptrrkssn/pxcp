@@ -238,7 +238,7 @@ fsobj_set_attr(FSOBJ *op,
 extern ssize_t
 fsobj_digest(FSOBJ *op,
              int type,
-             uint8_t *result,
+             void *result,
              size_t size);
 
 #endif
