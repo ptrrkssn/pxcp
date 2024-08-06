@@ -369,15 +369,20 @@ fsobj_open(FSOBJ *op,
 	fd = openat(FSOBJ_FD(dirp), name, flags&~O_NOFOLLOW, mode);
 #endif
 #ifdef O_SEARCH
-    if (fd < 0 && errno == ENOTDIR && flags & O_SEARCH)
-        fd = openat(FSOBJ_FD(dirp), name, flags&~O_SEARCH, mode);
+    if (fd < 0 && flags & O_SEARCH) {
+        if (errno == ENOTDIR)
+	    fd = openat(FSOBJ_FD(dirp), name, flags&~O_SEARCH, mode);
+	if (errno == ELOOP)
+	  fprintf(stderr, "*** fsobj_open(%s): openat(%d, %s): Handle O_SEARCH & symlink\n",
+		  fsobj_path(op), FSOBJ_FD(op), name);
+    }
 #endif
     if (f_debug > 1)
-        fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%s) [op=%p, flags=%s]\n",
+        fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%d=%s) [op=%p, flags=%s]\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
                 FSOBJ_FD(dirp), name, flags, mode,
-                fd, fd < 0 ? strerror(errno) : "", op,
-                _fsobj_open_flags(flags));
+                fd, errno, fd < 0 ? strerror(errno) : "", 
+		op, _fsobj_open_flags(flags));
 #else
     path = strdupcat(fsobj_path(dirp), "/", name, NULL);
     if (!path)
@@ -597,6 +602,11 @@ fsobj_reopen(FSOBJ *op,
                 fsobj_path(op), flags);
         return 0;
     }
+#endif
+
+#ifdef O_SEARCH
+    if ((flags & O_SEARCH) && !S_ISDIR(op->stat.st_mode))
+      flags &= ~O_SEARCH;
 #endif
     
 #ifdef HAVE_OPENAT
@@ -1958,8 +1968,8 @@ fsobj_list_attrs(FSOBJ *op,
                     (int) rc, rc < 0 ? strerror(errno) : "");
 #endif
 #else
-	errno = ENOSYS;
-	rc = -1;
+	/* No support -> no attrs found */
+	rc = 0;
 #endif
         goto End;
     }
@@ -2009,8 +2019,8 @@ fsobj_list_attrs(FSOBJ *op,
 		path, data, (long long unsigned) nbytes,
 		(int) rc, rc < 0 ? strerror(errno) : "");
 #else
-    errno = ENOSYS;
-    rc = -1;
+    /* No support -> no attrs found */
+    rc = 0;
 #endif
     
  End:

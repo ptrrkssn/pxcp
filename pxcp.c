@@ -78,6 +78,7 @@ int f_ignore = 0;
 int f_times = 0;
 int f_sizes = 0;
 int f_timestamps = 0;
+int f_modes = 0;
 int f_owners = 0;
 int f_groups = 0;
 int f_checksum = 0;
@@ -127,20 +128,21 @@ struct options {
     int (*f)(char *start, char **next);
     char *help;
 } options[] = {
-    { 'a', "all",        &f_all,         get_int,     "Archive mode (enables c,g,o,r,t,A,F,T,X options)" },
+    { 'a', "all",        &f_all,         get_int,     "Archive mode (enables c,g,m,o,r,t,A,F,T,X options)" },
     { 'd', "depth",      &f_maxdepth,    get_int,     "Max recursive depth" },
     { 'e', "exist",      &f_exist,       get_int,     "Only copy to existing targets" },
     { 'f', "force",      &f_force,       get_int,     "Force updates" },
     { 'g', "groups",     &f_groups,      get_int,     "Copy object group" },
     { 'h', "help",       &f_help,        get_int,     "Display usage information" },
     { 'i', "ignore",     &f_ignore,      get_int,     "Ignore non-fatal errors and continue" },
-    { 'm', "metaonly",   &f_metaonly,    get_int,     "Only copy metadata" },
+    { 'm', "modes",      &f_modes,       get_int,     "Copy mode bits" },
     { 'n', "dryrun",     &f_dryrun,      get_int,     "Enable dry-run mode" },
     { 'o', "owners",     &f_owners,      get_int,     "Copy object owner" },
     { 'p', "prune",      &f_prune,       get_int,     "Prune removed objects" },
     { 'r', "recurse",    &f_recurse,     get_int,     "Enable recursion" },
     { 's', "sizes",      &f_sizes,       get_int,     "Only copy files if sizes differ" },
     { 't', "times",      &f_times,       get_int,     "Only copy files if timestamps differ" },
+    { 'u', "metaonly",   &f_metaonly,    get_int,     "Only copy metadata" },
     { 'v', "verbose",    &f_verbose,     get_int,     "Set verbosity level" },
     { 'w', "warnings",   &f_warnings,    get_int,     "Display warnings/notices" },
     { 'x', "xdev",       &f_noxdev,      get_int,     "Stay in same filesystem" },
@@ -743,6 +745,14 @@ mode_clone(FSOBJ *src,
            FSOBJ *dst) {
     if (f_dryrun)
         return 0;
+
+    
+    if ((src->stat.st_mode&ALLPERMS) == 0) {
+      /* If all bits off -> Solaris with ACLs? */
+      if (f_debug)
+	  fprintf(stderr, "** mode_clone: all-zero perms, not copying\n");
+      return 0;
+    }
     
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
         if (fsobj_chmod(dst, NULL, (src->stat.st_mode&ALLPERMS)) < 0) {
@@ -1242,9 +1252,10 @@ clone(FSOBJ *src,
 		fsobj_path(src), fsobj_typestr(src),
 		fsobj_path(dst), fsobj_typestr(dst));
 
-    if (fsobj_isreal(src) < 1) {
-        fprintf(stderr, "%s: Error: %s: Source not opened\n",
-                argv0, fsobj_path(src));
+    if (fsobj_isreal(src) < 1 && !S_ISLNK(src->stat.st_mode)) {
+        fprintf(stderr, "%s: Error: %s: Source not opened (type=%s)\n",
+                argv0, fsobj_path(src),
+		_fsobj_mode_type2str(src->stat.st_mode));
         return -1;
     }
 
@@ -1296,9 +1307,16 @@ clone(FSOBJ *src,
 
     if (dst->fd < 0) {
         if (s_type == S_IFDIR) {
+	    mode_t mode = src->stat.st_mode&ALLPERMS;
+
+	    if (!mode) {
+	      fprintf(stderr, "*** clone: Forcing directory mode to 0700\n");
+	        mode = 0700;
+	    }
+	    
             if (f_debug)
-                fprintf(stderr, "*** clone: Creating & Opening destination directory for reading\n");
-            if (fsobj_open(dst, NULL, NULL, O_CREAT|O_RDONLY|O_DIRECTORY, src->stat.st_mode) < 0) {
+	      fprintf(stderr, "*** clone: Creating & Opening destination directory for reading (mode=%04o)\n", mode);
+            if (fsobj_open(dst, NULL, NULL, O_CREAT|O_RDONLY|O_DIRECTORY, mode|S_IFDIR) < 0) {
                 fprintf(stderr, "%s: Error: %s: Create(directory): %s\n",
                         argv0, fsobj_path(dst), strerror(errno));
                 return -1;
@@ -1475,11 +1493,13 @@ clone(FSOBJ *src,
             mdiff |= MD_GID;
     }
 
-    rc = mode_clone(src, dst);
-    if (rc < 0 && !f_ignore)
-        return -1;
-    if (rc > 0)
-        mdiff |= MD_MODE;
+    if (f_modes) {
+        rc = mode_clone(src, dst);
+	if (rc < 0 && !f_ignore)
+	    return -1;
+	if (rc > 0)
+	    mdiff |= MD_MODE;
+    }
 
     if (f_acls) {
         rc = acls_clone(src, dst);
@@ -1744,6 +1764,7 @@ main(int argc,
 	f_groups     += f_all;
 	f_recurse    += f_all;
         f_sizes      += f_all;
+	f_modes      += f_all;
 	f_times      += f_all;
 	f_acls       += f_all;
 	f_xattrs     += f_all;
