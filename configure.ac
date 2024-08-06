@@ -66,16 +66,19 @@ AC_DEFINE([HAVE_GETDIRENTRIES], [1], [Define if getdirentries exists and is link
 
 AC_SEARCH_LIBS([adler32_z], [z], [], [
   AC_SEARCH_LIBS([crc32_z], [z])])
-  
+
+AC_CHECK_FUNCS([adler32_z crc32_z])
+
 AC_SEARCH_LIBS([MD5Init], [md], [], [
   AC_SEARCH_LIBS([SKEIN256_Init], [md], [], [
     AC_SEARCH_LIBS([SHA256_Init], [md], [], [
       AC_SEARCH_LIBS([SHA384_Init], [md], [], [
         AC_SEARCH_LIBS([SHA512_Init], [md])])])])])
         
-AC_CHECK_FUNCS([adler32_z crc32_z MD5Init SKEIN256_Init SHA256_Init SHA384_Init SHA512_Init])
+AC_CHECK_FUNCS([MD5Init SHA256_Init SHA384_Init SHA512_Init])
 
-AC_CHECK_FUNCS([Skein_256_Init])
+AC_CHECK_FUNCS([SKEIN256_Init], [], [
+  AC_CHECK_FUNCS([Skein_256_Init])])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT

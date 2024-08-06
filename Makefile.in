@@ -34,15 +34,17 @@ VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --sh
 
 PROGRAMS =	        pxcp
 
-PXCP_OBJS =             pxcp.o fsobj.o acls.o misc.o digest.o
+PXCP_OBJS =             pxcp.o fsobj.o acls.o misc.o digest.o xxhash.o fletcher.o
 
 all: $(PROGRAMS)
 
-digest.o: digest.c config.h
-misc.o:   misc.c misc.h config.h
-acls.o:   acls.c acls.h config.h
-fsobj.o:  fsobj.c fsobj.h config.h acls.h misc.h
-pxcp.o:   pxcp.c acls.h config.h misc.h
+fletcher.o: fletcher.c fletcher.h config.h
+xxhash.o:   xxhash.c xxhash.h config.h
+digest.o:   digest.c digest.h xxhash.h fletcher.h config.h
+misc.o:     misc.c misc.h config.h
+acls.o:     acls.c acls.h config.h
+fsobj.o:    fsobj.c fsobj.h acls.h misc.h digest.h config.h
+pxcp.o:     pxcp.c fsobj.h acls.h misc.h config.h
 
 pxcp: $(PXCP_OBJS)
 	$(CC) $(LDFLAGS) -o pxcp $(PXCP_OBJS) $(LIBS)
@@ -168,7 +170,23 @@ check-12: check-11
 	@echo ""; echo "--- Check 12: t/d should be empty"
 	@rmdir t/d && echo "--> OK"
 
-check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10 check-11 check-12
+check-13: setup-check
+	@echo ""; echo "--- Check 13: XXHASH32 Checksum"
+	@./pxcp -L --checksum=xxhash32 t/s/d/f2.txt | fgrep '[e8 43 d0 9e]' && echo  "--> OK"
+
+check-14: setup-check
+	@echo ""; echo "--- Check 14: XXHASH64 Checksum"
+	@./pxcp -L --checksum=xxhash64 t/s/d/f2.txt | fgrep '[f1 f9 8e b6 a7 e5 6b 40]' && echo "--> OK"
+
+check-15: setup-check
+	@echo ""; echo "--- Check 15: FLETCHER16 Checksum"
+	@./pxcp -L --checksum=fletcher16 t/s/d/f2.txt | fgrep '[77 28]' && echo "--> OK"
+
+check-16: setup-check
+	@echo ""; echo "--- Check 16: FLETCHER32 Checksum"
+	@./pxcp -L --checksum=fletcher32 t/s/d/f2.txt | fgrep '[41 36 7a b4]' && echo "--> OK"
+
+check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10 check-11 check-12 check-13 check-14 check-15 check-16
 	@echo ""; echo "All tests passed."
 
 

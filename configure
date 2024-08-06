@@ -5716,6 +5716,20 @@ esac
 fi
 
 
+ac_fn_c_check_func "$LINENO" "adler32_z" "ac_cv_func_adler32_z"
+if test "x$ac_cv_func_adler32_z" = xyes
+then :
+  printf "%s\n" "#define HAVE_ADLER32_Z 1" >>confdefs.h
+
+fi
+ac_fn_c_check_func "$LINENO" "crc32_z" "ac_cv_func_crc32_z"
+if test "x$ac_cv_func_crc32_z" = xyes
+then :
+  printf "%s\n" "#define HAVE_CRC32_Z 1" >>confdefs.h
+
+fi
+
+
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing MD5Init" >&5
 printf %s "checking for library containing MD5Init... " >&6; }
 if test ${ac_cv_search_MD5Init+y}
@@ -6064,28 +6078,10 @@ esac
 fi
 
 
-ac_fn_c_check_func "$LINENO" "adler32_z" "ac_cv_func_adler32_z"
-if test "x$ac_cv_func_adler32_z" = xyes
-then :
-  printf "%s\n" "#define HAVE_ADLER32_Z 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "crc32_z" "ac_cv_func_crc32_z"
-if test "x$ac_cv_func_crc32_z" = xyes
-then :
-  printf "%s\n" "#define HAVE_CRC32_Z 1" >>confdefs.h
-
-fi
 ac_fn_c_check_func "$LINENO" "MD5Init" "ac_cv_func_MD5Init"
 if test "x$ac_cv_func_MD5Init" = xyes
 then :
   printf "%s\n" "#define HAVE_MD5INIT 1" >>confdefs.h
-
-fi
-ac_fn_c_check_func "$LINENO" "SKEIN256_Init" "ac_cv_func_SKEIN256_Init"
-if test "x$ac_cv_func_SKEIN256_Init" = xyes
-then :
-  printf "%s\n" "#define HAVE_SKEIN256_INIT 1" >>confdefs.h
 
 fi
 ac_fn_c_check_func "$LINENO" "SHA256_Init" "ac_cv_func_SHA256_Init"
@@ -6108,13 +6104,27 @@ then :
 fi
 
 
-ac_fn_c_check_func "$LINENO" "Skein_256_Init" "ac_cv_func_Skein_256_Init"
+
+  for ac_func in SKEIN256_Init
+do :
+  ac_fn_c_check_func "$LINENO" "SKEIN256_Init" "ac_cv_func_SKEIN256_Init"
+if test "x$ac_cv_func_SKEIN256_Init" = xyes
+then :
+  printf "%s\n" "#define HAVE_SKEIN256_INIT 1" >>confdefs.h
+
+else case e in #(
+  e)
+  ac_fn_c_check_func "$LINENO" "Skein_256_Init" "ac_cv_func_Skein_256_Init"
 if test "x$ac_cv_func_Skein_256_Init" = xyes
 then :
   printf "%s\n" "#define HAVE_SKEIN_256_INIT 1" >>confdefs.h
 
 fi
+ ;;
+esac
+fi
 
+done
 
 ac_config_files="$ac_config_files Makefile"
 

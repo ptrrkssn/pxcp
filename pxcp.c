@@ -139,18 +139,18 @@ struct options {
     { 'o', "owners",     &f_owners,      get_int,     "Copy object owner" },
     { 'p', "prune",      &f_prune,       get_int,     "Prune removed objects" },
     { 'r', "recurse",    &f_recurse,     get_int,     "Enable recursion" },
-    { 's', "sync",       &f_sync,        get_int,     "Set sync mode" },
-    { 't', "times",      &f_times,       get_int,     "Only copy files if newer" },
+    { 's', "sizes",      &f_sizes,       get_int,     "Only copy files if sizes differ" },
+    { 't', "times",      &f_times,       get_int,     "Only copy files if timestamps differ" },
     { 'v', "verbose",    &f_verbose,     get_int,     "Set verbosity level" },
     { 'w', "warnings",   &f_warnings,    get_int,     "Display warnings/notices" },
     { 'x', "xdev",       &f_noxdev,      get_int,     "Stay in same filesystem" },
     { 'A', "acls",       &f_acls,        get_int,     "Copy ACLs" },
-    { 'C', "checksum",   &f_checksum,    get_digest,  "Only copy files if checksum differs" },
+    { 'C', "checksum",   &f_checksum,    get_digest,  "Only copy files if checksums differs" },
     { 'D', "debug",      &f_debug,       get_int,     "Set debugging level" },
     { 'F', "flags",      &f_flags,       get_int,     "Copy object flags" },
     { 'L', "list",       &f_list,        get_int,     "List objects" },
     { 'M', "mmap",       &f_mmap,        get_int,     "Use mmap(2)" },
-    { 'S', "sizes",      &f_sizes,       get_int,     "Copy only objects with changed size" },
+    { 'S', "sync",       &f_sync,        get_int,     "Select file sync modes" },
     { 'T', "timestamps", &f_timestamps,  get_int,     "Copy timestamps" }, 
     { 'X', "xattrs",     &f_xattrs,      get_int,     "Copy Extended Attributes" },
     { -1,  NULL,         NULL,           NULL,        NULL }
@@ -295,14 +295,14 @@ file_clone(FSOBJ *src,
     if (!f_sizes && !f_times && !f_checksum && !f_metaonly)
         update_f = 1;
     
-    if (f_sizes && src->stat.st_size != dst->stat.st_size) {
+    if (!update_f && f_sizes && src->stat.st_size != dst->stat.st_size) {
         if (f_debug > 1)
             fprintf(stderr, "** file_clone(%s, %s): Sizes differs\n",
                     fsobj_path(src), fsobj_path(dst));
         update_f = 1;
     }
 
-    if (f_times && ts_check(&dst->stat.st_mtim, &src->stat.st_mtim, f_times-1)) {
+    if (!update_f && f_times && ts_check(&dst->stat.st_mtim, &src->stat.st_mtim, f_times-1)) {
         if (f_debug > 1)
             fprintf(stderr, "** file_clone(%s, %s): Times differs\n",
                     fsobj_path(src), fsobj_path(dst));
@@ -316,7 +316,7 @@ file_clone(FSOBJ *src,
         return -1;
     }
         
-    if (f_checksum) {
+    if (!update_f && f_checksum) {
         DIGEST s_digest, d_digest;
         unsigned char s_digbuf[DIGEST_BUFSIZE_MAX];
         unsigned char d_digbuf[DIGEST_BUFSIZE_MAX];
@@ -567,7 +567,7 @@ file_clone(FSOBJ *src,
     }
         
     tmpname = NULL;
-        
+
     if (fsobj_reopen(dst, O_RDONLY) < 0) {
         int t_errno = errno;
             
@@ -577,15 +577,12 @@ file_clone(FSOBJ *src,
         rc = -1;
         goto End;
     }
-        
-        
+
  End:
     if (s_bufp)
         munmap(s_bufp, src->stat.st_size);
     if (d_bufp)
         munmap(d_bufp, dst->stat.st_size);
-    if (tfd >= 0)
-        close(tfd);
     if (tmpname)
         (void) unlinkat(dst->parent->fd, tmpname, 0);
 
@@ -1298,8 +1295,7 @@ clone(FSOBJ *src,
     }
 
     if (dst->fd < 0) {
-        switch (s_type) {
-        case S_IFDIR:
+        if (s_type == S_IFDIR) {
             if (f_debug)
                 fprintf(stderr, "*** clone: Creating & Opening destination directory for reading\n");
             if (fsobj_open(dst, NULL, NULL, O_CREAT|O_RDONLY|O_DIRECTORY, src->stat.st_mode) < 0) {
@@ -1307,18 +1303,6 @@ clone(FSOBJ *src,
                         argv0, fsobj_path(dst), strerror(errno));
                 return -1;
             }
-            break;
-
-        case S_IFREG:
-            if (f_debug)
-                fprintf(stderr, "*** clone: Creating & Opening destination file for reading\n");
-            
-            if (fsobj_open(dst, NULL, NULL, O_CREAT|O_RDONLY, src->stat.st_mode) < 0) {
-                fprintf(stderr, "%s: Error: %s: Create(file): %s\n",
-                        argv0, fsobj_path(dst), strerror(errno));
-                return -1;
-            }
-            break;
         }
 
         ++n_added;
@@ -1759,6 +1743,7 @@ main(int argc,
 	f_owners     += f_all;
 	f_groups     += f_all;
 	f_recurse    += f_all;
+        f_sizes      += f_all;
 	f_times      += f_all;
 	f_acls       += f_all;
 	f_xattrs     += f_all;

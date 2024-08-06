@@ -32,6 +32,7 @@
 
 #include "digest.h"
 
+
 #include <errno.h>
 #include <string.h>
 
@@ -40,6 +41,8 @@
 
 DIGEST_LIST digests[] = {
     { "NONE",       DIGEST_TYPE_NONE },
+    { "XXHASH32",   DIGEST_TYPE_XXHASH32 },
+    { "XXHASH64",   DIGEST_TYPE_XXHASH64 },
     { "FLETCHER16", DIGEST_TYPE_FLETCHER16 },
     { "FLETCHER32", DIGEST_TYPE_FLETCHER32 },
     { "XOR8",       DIGEST_TYPE_XOR8 },
@@ -50,6 +53,7 @@ DIGEST_LIST digests[] = {
 #ifdef HAVE_CRC32_Z
     { "CRC32",      DIGEST_TYPE_CRC32 },
 #endif
+
 #ifdef HAVE_MD5INIT
     { "MD5",        DIGEST_TYPE_MD5 },
 #endif
@@ -99,6 +103,9 @@ digests_print(FILE *fp,
     int i;
 
     for (i = 0; digests[i].name; i++) {
+        if (digests[i].type < 0)
+            continue;
+        
         if (sep) {
             if (i > 0)
                 fputs(sep, fp);
@@ -109,79 +116,6 @@ digests_print(FILE *fp,
     putc('\n', fp);
 }
 
-static void
-fletcher16_init(FLETCHER16_CTX *ctx) {
-    ctx->c0 = 0;
-    ctx->c1 = 0;
-}
-
-static void
-fletcher32_init(FLETCHER32_CTX *ctx) {
-    ctx->c0 = 0;
-    ctx->c1 = 0;
-}
-
-static void
-fletcher16_update(FLETCHER16_CTX *ctx,
-                  const uint8_t *data,
-                  size_t len) {
-    if (!data)
-        return;
-
-    while (len > 0) {
-        size_t blocklen = len;
-        
-        if (blocklen > 5802) {
-            blocklen = 5802;
-        }
-        len -= blocklen;
-
-        do {
-            ctx->c0 += *data++;
-            ctx->c1 += ctx->c0;
-        } while (--blocklen);
-        ctx->c0 %= 255;
-        ctx->c1 %= 255;
-    }
-}
-
-static void
-fletcher32_update(FLETCHER32_CTX *ctx,
-                  const uint16_t *data,
-                  size_t len) {
-    if (!data)
-        return;
-    
-    len = (len + 1) & ~1;      /* Round up len to words */
- 
-    /* We similarly solve for n > 0 and n * (n+1) / 2 * (2^16-1) < (2^32-1) here. */
-    /* On modern computers, using a 64-bit c0/c1 could allow a group size of 23726746. */
-    while (len > 0) {
-        size_t blocklen = len;
-        
-        if (blocklen > 360*2) {
-            blocklen = 360*2;
-        }
-        len -= blocklen;
-        do {
-            ctx->c0 += *data++;
-            ctx->c1 += ctx->c0;
-        } while ((blocklen -= 2));
-        ctx->c0 %= 65535;
-        ctx->c1 %= 65535;
-    }
-}
-
-
-static uint16_t
-fletcher16_final(FLETCHER16_CTX *ctx) {
-    return (ctx->c1 << 8 | ctx->c0);
-}
-
-static uint32_t
-fletcher32_final(FLETCHER32_CTX *ctx) {
-    return (ctx->c1 << 16 | ctx->c0);
-}
 
 
 int
@@ -206,6 +140,14 @@ digest_init(DIGEST *dp,
         
     case DIGEST_TYPE_FLETCHER32:
         fletcher32_init(&dp->ctx.fletcher32);
+        break;
+        
+    case DIGEST_TYPE_XXHASH32:
+        xxhash32_init(&dp->ctx.xxhash32, 0);
+        break;
+        
+    case DIGEST_TYPE_XXHASH64:
+        xxhash64_init(&dp->ctx.xxhash64, 0);
         break;
         
 #ifdef HAVE_ADLER32_Z
@@ -276,6 +218,14 @@ digest_update(DIGEST *dp,
         case DIGEST_TYPE_XOR8:
             while (bufsize-- > 0)
                 dp->ctx.xor8 |= *buf++;
+            break;
+
+        case DIGEST_TYPE_XXHASH32:
+            xxhash32_update(&dp->ctx.xxhash32, buf, bufsize);
+            break;
+
+        case DIGEST_TYPE_XXHASH64:
+            xxhash64_update(&dp->ctx.xxhash64, buf, bufsize);
             break;
 
         case DIGEST_TYPE_FLETCHER16:
@@ -376,7 +326,7 @@ digest_final(DIGEST *dp,
 		errno = EOVERFLOW;
 		return -1;
 	    }
-	    * (uint16_t *) buf = htons(fletcher16_final(&dp->ctx.fletcher16));
+	    * (uint16_t *) buf = fletcher16_final(&dp->ctx.fletcher16);
 	    rlen = DIGEST_BUFSIZE_FLETCHER16;
             break;
             
@@ -385,8 +335,26 @@ digest_final(DIGEST *dp,
 		errno = EOVERFLOW;
 		return -1;
 	    }
-	    * (uint32_t *) buf = htons(fletcher32_final(&dp->ctx.fletcher32));
+	    * (uint32_t *) buf = fletcher32_final(&dp->ctx.fletcher32);
 	    rlen = DIGEST_BUFSIZE_FLETCHER32;
+            break;
+            
+        case DIGEST_TYPE_XXHASH32:
+	    if (bufsize < DIGEST_BUFSIZE_XXHASH32) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    xxhash32_final(&dp->ctx.xxhash32, (uint32_t *) buf, bufsize);
+	    rlen = DIGEST_BUFSIZE_XXHASH32;
+            break;
+            
+        case DIGEST_TYPE_XXHASH64:
+	    if (bufsize < DIGEST_BUFSIZE_XXHASH64) {
+		errno = EOVERFLOW;
+		return -1;
+	    }
+	    xxhash64_final(&dp->ctx.xxhash64, (uint64_t *) buf, bufsize);
+	    rlen = DIGEST_BUFSIZE_XXHASH64;
             break;
             
 #ifdef HAVE_ADLER32_Z
