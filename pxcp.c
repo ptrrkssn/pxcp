@@ -109,10 +109,8 @@ get_digest(char *start,
     if (v < 0)
         v = get_int(start, next);
     else {
-        if (v >= 0) {
-            while (*start)
-                ++start;
-        }
+	while (*start)
+	    ++start;
         
         *next = start;
     }
@@ -1115,13 +1113,13 @@ static void
 p_buf(FILE *fp,
       const uint8_t *buf,
       size_t len) {
-    putc('{', fp);
+    putc('[', fp);
     while (len-- > 0) {
         fprintf(fp, "%02x", *buf++);
         if (len > 0)
             putc(' ', fp);
     }
-    putc('}', fp);
+    putc(']', fp);
 }
 
 int
@@ -1636,10 +1634,10 @@ main(int argc,
                 f_no = 1;
                 os += 3;
             }
-            
-            for (k = 0; options[k].c != -1 && strcmp(options[k].l, os) != 0; ++k)
+
+            for (k = 0; options[k].l && strcmp(options[k].l, os) != 0; ++k)
                 ;
-            if (options[k].c == -1) {
+            if (!options[k].l) {
                 if (vs)
                     *--vs = '=';
 		fprintf(stderr, "%s: Error: %s: Invalid switch\n",
@@ -1660,11 +1658,7 @@ main(int argc,
                 long v;
                 char *cp;
 
-#if 0
                 v = (*options[k].f)(vs, &cp);
-#else
-                v = get_int(vs, &cp);
-#endif
                 if (cp == vs) {
                     *--vs = '=';
                     fprintf(stderr, "%s: Error: %s: Missing or invalid switch value\n",
@@ -1714,8 +1708,12 @@ main(int argc,
                 usage();
 
             vp = (int *) options[k].vp;
-                
+#if 0
             v = (*options[k].f)(op+1, &cp);
+#else
+	    v = get_int(op+1, &cp);
+#endif
+                
             if (cp == op+1) {
                 (*vp)++;
             }

@@ -57,6 +57,10 @@
 #include "misc.h"
 #include "digest.h"
 
+#ifndef MAP_NOCORE
+#define MAP_NOCORE 0
+#endif
+
 #ifndef ENOATTR
 #define ENOATTR ENODATA
 #endif

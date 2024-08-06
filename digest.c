@@ -329,8 +329,8 @@ digest_final(DIGEST *dp,
 	    rlen = DIGEST_BUFSIZE_FLETCHER16;
             break;
             
-	case DIGEST_TYPE_ADLER32:
 #ifdef HAVE_ADLER32_Z
+	case DIGEST_TYPE_ADLER32:
 	    if (bufsize < DIGEST_BUFSIZE_ADLER32) {
 		errno = EOVERFLOW;
 		return -1;
@@ -338,12 +338,10 @@ digest_final(DIGEST *dp,
 	    * (uint32_t *) buf = htonl(dp->ctx.adler32);
 	    rlen = DIGEST_BUFSIZE_ADLER32;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_CRC32:
 #ifdef HAVE_CRC32_Z
+	case DIGEST_TYPE_CRC32:
 	    if (bufsize < DIGEST_BUFSIZE_CRC32) {
 		errno = EOVERFLOW;
 		return -1;
@@ -351,12 +349,10 @@ digest_final(DIGEST *dp,
 	    * (uint32_t *) buf = htonl(dp->ctx.crc32);
 	    rlen = DIGEST_BUFSIZE_CRC32;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_MD5:
 #ifdef HAVE_MD5INIT
+	case DIGEST_TYPE_MD5:
 	    if (bufsize < DIGEST_BUFSIZE_MD5) {
 		errno = EOVERFLOW;
 		return -1;
@@ -364,12 +360,10 @@ digest_final(DIGEST *dp,
 	    MD5Final(buf, &dp->ctx.md5);
 	    rlen = DIGEST_BUFSIZE_MD5;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_SKEIN256:
 #ifdef HAVE_SKEIN256_INIT
+	case DIGEST_TYPE_SKEIN256:
 	    if (bufsize < DIGEST_BUFSIZE_SKEIN256) {
 		errno = EOVERFLOW;
 		return -1;
@@ -377,12 +371,10 @@ digest_final(DIGEST *dp,
 	    SKEIN256_Final(buf, &dp->ctx.skein256);
 	    rlen = DIGEST_BUFSIZE_SKEIN256;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_SHA256:
 #ifdef HAVE_SHA256_INIT
+	case DIGEST_TYPE_SHA256:
 	    if (bufsize < DIGEST_BUFSIZE_SHA256) {
 		errno = EOVERFLOW;
 		return -1;
@@ -390,12 +382,10 @@ digest_final(DIGEST *dp,
 	    SHA256_Final(buf, &dp->ctx.sha256);
 	    rlen = DIGEST_BUFSIZE_SHA256;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_SHA384:
 #ifdef HAVE_SHA384_INIT
+	case DIGEST_TYPE_SHA384:
 	    if (bufsize < DIGEST_BUFSIZE_SHA384) {
 		errno = EOVERFLOW;
 		return -1;
@@ -403,12 +393,10 @@ digest_final(DIGEST *dp,
 	    SHA384_Final(buf, &dp->ctx.sha384);
 	    rlen = DIGEST_BUFSIZE_SHA384;
 	    break;
-#else
-	    return -1;
 #endif
 	    
-	case DIGEST_TYPE_SHA512:
 #ifdef HAVE_SHA512_INIT
+	case DIGEST_TYPE_SHA512:
 	    if (bufsize < DIGEST_BUFSIZE_SHA512) {
 		errno = EOVERFLOW;
 		return -1;
@@ -416,8 +404,6 @@ digest_final(DIGEST *dp,
 	    SHA512_Final(buf, &dp->ctx.sha512);
 	    rlen = DIGEST_BUFSIZE_SHA512;
 	    break;
-#else
-	    return -1;
 #endif
 	}
 	break;

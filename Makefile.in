@@ -99,46 +99,48 @@ check-2: setup-check
 
 check-3: setup-check
 	@echo ""; echo "--- Check 3: Cloning t/s -> t/d (again, with force & sync)"
-	@./pxcp -vfrAXs  t/s t/d && echo "--> OK"
+	@./pxcp -vfrAXs t/s t/d && echo "--> OK"
 
 check-4: setup-check
-	@echo ""; echo "--- Check 4: Cloning t/s -> t/d (again, with prune)"
+	@echo ""; echo "--- Check 4: Cloning t/s -> t/d (again, with fletcher16)"
+	@./pxcp -vrAXs --checksum=fletcher16 t/s t/d && echo "--> OK"
+
+check-5: setup-check
+	@echo ""; echo "--- Check 5: Cloning t/s -> t/d (again, with prune)"
 	@rm -fr t/d/d && touch t/d/d && ./pxcp -vrAXp  t/s t/d && echo "--> OK"
 
-check-5: check-4
-	@echo ""; echo "--- Check 5: ls -alR"
+check-6: check-5
+	@echo ""; echo "--- Check 6: ls -alR"
 	@(cd t/s ; ls -alR . | grep -v '^total') >/tmp/pxcp-s.out && (cd t/d ; ls -alR . | grep -v '^total') >/tmp/pxcp-d.out && cat /tmp/pxcp-d.out && cmp /tmp/pxcp-s.out /tmp/pxcp-d.out && echo "--> OK"
 
-check-6: check-4
-	@echo ""; echo "--- Check 6: File Content"
+check-7: check-5
+	@echo ""; echo "--- Check 7: File Content"
 	@cat t/d/d/f2.txt && cmp t/s/d/f2.txt t/d/d/f2.txt && echo "--> OK"
 
-check-7: check-7a check-7b
-
-check-7a: check-4
+check-8: check-5
 	@echo ""
 	@if [ "`uname -s`" = "Linux" ]; then \
 		if [ "`df --output=fstype t/s/f.txt|tail -1`" = "nfs4" ]; then \
-			echo "--- Check 7a: ACL ACE entry copied (Linux, nfs4)"; \
+			echo "--- Check 8: ACL ACE entry copied (Linux, nfs4)"; \
 			nfs4_getfacl t/d/f.txt | grep '^A::root@.*:r$$' && echo "--> OK"; \
 		else \
-			echo "--- Check 7a: ACL ACE entry copied (Linux, non-nfs4)"; \
+			echo "--- Check 8: ACL ACE entry copied (Linux, non-nfs4)"; \
 			getfacl t/d/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
 		fi \
 	 fi
 	@if [ `uname -s` = "FreeBSD" ]; then \
-		echo "--- Check 7a: ACL ACE entry copied (FreeBSD)"; \
+		echo "--- Check 8: ACL ACE entry copied (FreeBSD)"; \
 		getfacl t/d/f.txt | fgrep 'user:root:r--' && echo "--> OK"; \
 	 fi
 	@if [ `uname -s` = "Darwin" ]; then \
-		echo "--- Check 7a: ACL ACE entry copied (MacOS)"; \
+		echo "--- Check 8: ACL ACE entry copied (MacOS)"; \
 		ls -le t/d/f.txt | fgrep 'user:root allow read' && echo "--> OK"; \
 	 fi
 
-check-7b: check-4
+check-9: check-5
 	@echo ""
 	@if [ "`uname -s`" = "Linux" ]; then \
-		echo "--- Check 7b: XAttr entry copied (Linux)"; \
+		echo "--- Check 9: XAttr entry copied (Linux)"; \
 		if df --output=fstype t/s/f.txt | fgrep -q nfs; then \
 			echo "--> Skipped (Can not test XAttrs on NFS)"; \
 		else \
@@ -146,27 +148,27 @@ check-7b: check-4
 		fi \
 	 fi
 	@if [ `uname -s` = "FreeBSD" ]; then \
-		echo "--- Check 7b: Extended Attribute entry copied (FreeBSD)"; \
+		echo "--- Check 9: Extended Attribute entry copied (FreeBSD)"; \
 		getextattr user pxcptest t/d/f.txt | fgrep 'Hello' && echo "--> OK"; \
 	 fi
 	@if [ `uname -s` = "Darwin" ]; then \
-		echo "--- Check 7: ACL ACE entry copied (MacOS)"; \
+		echo "--- Check 9: ACL ACE entry copied (MacOS)"; \
 		xattr -p pxcptest t/d/f.txt | fgrep 'Hello' && echo "--> OK"; \
 	 fi
 
-check-8: check-4
-	@echo ""; echo "--- Check 8: Cloning t/e -> t/d (with purge)"
+check-10: check-5
+	@echo ""; echo "--- Check 10: Cloning t/e -> t/d (with purge)"
 	@./pxcp -vrAp t/e t/d && echo "--> OK"
 
-check-9: check-8
+check-11: check-10
 	@echo ""; echo "--- Check 9: Cloning t/e -> t/d (again, with purge)"
 	@./pxcp -vrAp t/e t/d && echo "--> OK"
 
-check-10: check-9
+check-12: check-11
 	@echo ""; echo "--- Check 10: t/d should be empty"
 	@rmdir t/d && echo "--> OK"
 
-check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10
+check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10 check-11 check-12
 	@echo ""; echo "All tests passed."
 
 
