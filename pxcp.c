@@ -329,11 +329,8 @@ file_clone(FSOBJ *src,
             f_mmap = 1;
         
         digest_init(&s_digest, f_checksum);
-        digest_init(&d_digest, f_checksum); 
-
 	if (fsobj_mmap(src, (void **) &s_bufp) > 0)
 	    digest_update(&s_digest, s_bufp, src->stat.st_size);
-	
 	s_rc = digest_final(&s_digest, s_digbuf, sizeof(s_digbuf));
         
         /* Make sure object is opened for reading */
@@ -344,21 +341,21 @@ file_clone(FSOBJ *src,
 	    goto End;
         }
 
+        digest_init(&d_digest, f_checksum); 
 	if (fsobj_mmap(dst, (void **) &d_bufp) > 0) {
 	    digest_update(&d_digest, d_bufp, dst->stat.st_size);
 	    fsobj_munmap(dst, d_bufp);
 	    d_bufp = NULL;
 	}
-	
-	d_rc = digest_final(&d_digest, d_digbuf, sizeof(d_digbuf));
+        d_rc = digest_final(&d_digest, d_digbuf, sizeof(d_digbuf));
 
         if (s_rc >= 0 && s_rc == d_rc && memcmp(s_digbuf, d_digbuf, s_rc) != 0) {
-            if (f_debug > 1 || 1)
+            if (f_debug > 1)
                 fprintf(stderr, "** file_clone(%s, %s): Digest differs\n",
                         fsobj_path(src), fsobj_path(dst));
             update_f = 1;
         } else {
-            if (f_debug > 1 || 1)
+            if (f_debug > 1)
                 fprintf(stderr, "** file_clone(%s, %s): Digest equal\n",
                         fsobj_path(src), fsobj_path(dst));
 	}

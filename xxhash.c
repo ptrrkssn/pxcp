@@ -44,8 +44,10 @@
 
 #include "xxhash.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 #include <errno.h>
 
 static const uint32_t x32Prime1 = 2654435761U;
@@ -106,7 +108,6 @@ xxhash32_init(XXHASH32_CTX *ctx,
     ctx->state[3] = seed - x32Prime1;
     ctx->pbytes = 0;
     ctx->rbytes = 0;
-    ctx->buffer = NULL;
 }
 
 void
@@ -118,7 +119,6 @@ xxhash64_init(XXHASH64_CTX *ctx,
     ctx->state[3] = seed - x64Prime1;
     ctx->pbytes = 0;
     ctx->rbytes = 0;
-    ctx->buffer = NULL;
 }
 
 
@@ -131,7 +131,7 @@ xxhash32_update(XXHASH32_CTX *ctx,
     size_t dsize, rsize;
     const uint8_t *buf = (const uint8_t *) bufp;
 
-    
+
     /* Sanity checks */
     if (!buf || !nbytes) {
         errno = EINVAL;
@@ -164,8 +164,9 @@ xxhash32_update(XXHASH32_CTX *ctx,
     ctx->state[3] = s3;
 
     ctx->pbytes += nbytes;
+    
     ctx->rbytes = rsize;
-    ctx->buffer = (uint8_t *) block;
+    memcpy(ctx->buffer, (uint8_t *) block, rsize);
 
     return 0;
 }
@@ -214,7 +215,7 @@ xxhash64_update(XXHASH64_CTX *ctx,
 
     ctx->pbytes += nbytes;
     ctx->rbytes = rsize;
-    ctx->buffer = (uint8_t *) block;
+    memcpy(ctx->buffer, (uint8_t *) block, rsize);
 
     return 0;
 }
@@ -227,6 +228,7 @@ xxhash32_final(XXHASH32_CTX *ctx,
     uint32_t *rp = (uint32_t *) rbuf;
     uint32_t result = ctx->pbytes;
 
+    
     if (rbufsize < sizeof(result)) {
         errno = EINVAL;
         return -1;

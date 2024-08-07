@@ -40,14 +40,14 @@ typedef struct xxhash32_ctx {
     uint32_t state[4];
     uint32_t pbytes;
     uint32_t rbytes;
-    uint8_t *buffer;
+    uint8_t buffer[16];
 } XXHASH32_CTX;
 
 typedef struct xxhash64_ctx {
     uint64_t state[4];
     uint32_t pbytes;
     uint32_t rbytes;
-    uint8_t *buffer;
+    uint8_t buffer[32];
 } XXHASH64_CTX;
 
 
