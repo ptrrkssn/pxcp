@@ -24,43 +24,57 @@ USAGE:
 
   ./pxcp [options] <src> [.. <src-N>] [<dst>]
 
-
 Options:
-
-  -a    --all           Archive mode (enables c,g,o,r,t,A,F,T,X options)
+  -a    --all           Archive mode (enables c,g,m,o,r,t,A,F,T,X options)
   -d    --depth         Max recursive depth
   -e    --exist         Only copy to existing targets
   -f    --force         Force updates
   -g    --groups        Copy object group
   -h    --help          Display usage information
   -i    --ignore        Ignore non-fatal errors and continue
-  -m    --metaonly      Only copy metadata
+  -m    --modes         Copy mode bits
   -n    --dryrun        Enable dry-run mode
   -o    --owners        Copy object owner
   -p    --prune         Prune removed objects
   -r    --recurse       Enable recursion
-  -s    --sync          Set sync mode
-  -t    --times         Only copy files if newer
+  -s    --sizes         Only copy files if sizes differ
+  -t    --times         Only copy files if timestamps differ
+  -u    --metaonly      Only copy metadata
   -v    --verbose       Set verbosity level
   -w    --warnings      Display warnings/notices
   -x    --xdev          Stay in same filesystem
   -A    --acls          Copy ACLs
-  -C    --checksum      Only copy files if checksum differs
+  -C    --checksum      Only copy files if checksums differs
   -D    --debug         Set debugging level
   -F    --flags         Copy object flags
   -L    --list          List objects
   -M    --mmap          Use mmap(2)
-  -S    --sizes         Copy only objects with changed size
+  -S    --sync          Select file sync modes
   -T    --timestamps    Copy timestamps
   -X    --xattrs        Copy Extended Attributes
 
 All options may optionally take a argument. Short options only numeric (-v3)
 Long options numeric or string (--depth=1k, --checksum=sha256).
-Numbers may be specified as decimal, octal (preceed with 0) or hexadecimal (preceed 0x)
-and with an optional suffix (k, m, g, t) multiplier.
+Numbers may be specified as decimal, octal (preceed with 0) or
+hexadecimal (preceed 0x) and with an optional suffix (k, m, g, t) multiplier.
 
-Available checksum digests:
-  NONE(0), FLETCHER16(1), ADLER32(2), CRC32(3), MD5(4), SKEIN256(5), SHA256(6), SHA384(7), SHA512(8), XOR8(9)
+
+DIGESTS
+
+   0. NONE
+   1. XXHASH32
+   2. XXHASH64
+   3. FLETCHER16
+   4. FLETCHER32
+  21. ADLER32
+  22. CRC32
+  31. MD5
+  41. SKEIN256
+  51. SHA256
+  52. SHA384
+  53. SHA512
+
+(XXHASH & FLETCHER is always available, the rest depends on the system)
 
 
 
