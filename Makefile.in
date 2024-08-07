@@ -32,6 +32,8 @@ TAR =			tar
 VALGRIND =		valgrind
 VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --show-leak-kinds=all
 
+MANFILES = 		pxcp.man
+
 PROGRAMS =	        pxcp
 
 PXCP_OBJS =             pxcp.o fsobj.o acls.o misc.o digest.o xxhash.o fletcher.o
@@ -61,6 +63,18 @@ clean:
 
 distclean: clean
 	rm -fr config.status config.log autom4te.cache Makefile config.h t
+
+
+install-man: pxcp.man
+	$(INSTALL) -m 644 pxcp.man $(MAN1DIR)/pxcp.1
+
+install-bin: pxcp
+	$(INSTALL) pxcp $(BINDIR)
+
+install: install-bin
+
+install-all: install install-man
+
 
 # Check targets
 setup-check-acl:

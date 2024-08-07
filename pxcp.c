@@ -296,6 +296,9 @@ file_clone(FSOBJ *src,
 
     if (!f_sizes && !f_times && !f_checksum && !f_metaonly)
         update_f = 1;
+
+    if (!update_f && fsobj_typeof(dst) == 0)
+        update_f = 1;
     
     if (!update_f && f_sizes && src->stat.st_size != dst->stat.st_size) {
         if (f_debug > 1)

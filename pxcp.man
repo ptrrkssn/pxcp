@@ -1,0 +1,130 @@
+.\" Manual page for pxcp
+.\" Contact pen@lysator.liu.se to correct errors or typos.
+.TH share 1 "8 Aug 2024" "0.1" "share man page"
+
+.SH NAME
+pxcp \- Peter's eXtended CoPy utility
+
+.SH SYNOPSIS
+.B pxcp
+.RI "[" "<option>*" "]"
+.RI "[" "<source>*" ""
+.RI "[" "<target>" "]"
+
+.SH DESCRIPTION
+.B pxcp
+is a tool to copy or mirror files or whole directory trees.
+
+.SH OPTIONS
+.TP
+.B "-a" "--all"
+Archive mode (enables c,g,m,o,r,t,A,F,T,X options)
+.TP
+.B "-d" "--depth"
+Set max recursion depth
+.TP
+.B "-e" "--exist"
+Only copy to existing targets (do not create new)
+.TP
+.B "-f" "--force"
+Force updates
+.TP
+.B "-g" "--groups"
+Copy object group ownership
+.TP
+.B "-h" "--help"
+Display usage information
+.TP
+.B "-i" "--ignore"
+Ignore non-fatal errors
+.TP
+.B "-m" "--modes"
+Copy mode bits
+.TP
+.B "-n" "--dryrun"
+Never update anything, simulate what would be done
+.TP
+.B "-o" "--owners"
+Copy object user ownership
+.TP
+.B "-p" "--prune"
+Delete removed files
+.TP
+.B "-r" "--recurse"
+Enable recursion
+.TP
+.B "-s" "--sizes"
+Only copy files if sizes differ
+.TP
+.B "-t" "--times"
+Only copy objects if modification timestamp differs
+.TP
+.B "-u" "--metaonly"
+Only copy metadata (never file contents)
+.TP
+.B "-v" "--verbose"
+Set verbosity level
+.TP
+.B "-w" "--warnings"
+Enable warnings
+.TP
+.B "-x" "--xdev"
+Do not cross filesystems
+.TP
+.B "-A" "--acls"
+Copy ACLs
+.TP
+.B "-C" "--checksum"
+Only copy files if checksums differ
+.TP
+.B "-F" "--flags"
+Copy object flags
+.TP
+.B "-L" "--list"
+List objects (do not copy)
+.TP
+.B "-M" "--mmap"
+Use mmap for file copying
+.TP
+.B "-S" "--sync"
+Select file sync modes
+.TP
+.B "-T" "--timestamps"
+Copy object timestamps
+.TP
+.B "-X" "--xattrs"
+Copy object Xattrs/Extended Attributes
+
+.SH ARGUMENTS
+All options may optionally take a argument.
+.P
+Short options only numeric (-v3).
+.P
+Long options numeric or string (--depth=1k, --checksum=sha256).
+.P
+Numbers may be specified as decimal, octal (preceed with 0) or hexadecimal
+(preceed 0x) and with an optional suffix (k, m, g, t) multiplier.
+.P
+Without any value specified all options increase the value by 1.
+Long options prefixed with "--no-" decrease the value by 1.
+
+.SH DIGESTS
+
+The exakt list of supported Digests for the --checksum option is
+displayed with -h / --help, but some are always supported:
+.TP
+XXHASH32, XXHASH64, FLETCHER16 & FLETCHER32
+
+.SH SEE ALSO
+.TP
+cp(1), rsync(1)
+
+.SH BUGS
+No known bugs
+
+.SH SOURCE
+https://github.com/ptrrkssn/pxcp
+
+.SH AUTHOR
+Peter Eriksson <pen@lysator.liu.se>
+
