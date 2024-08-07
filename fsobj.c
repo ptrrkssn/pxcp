@@ -2475,7 +2475,10 @@ fsobj_digest(FSOBJ *op,
     
     digest_init(&digest, type);
 
-    if (fsobj_mmap(op, &bufp) > 0)
+    rc = fsobj_mmap(op, (void **) &bufp);
+    if (rc < 0)
+        goto End;
+    if (rc > 0)
         digest_update(&digest, bufp, op->stat.st_size);
 
     rc = digest_final(&digest, result, size);
