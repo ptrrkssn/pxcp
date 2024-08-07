@@ -43,30 +43,58 @@
 
 
 #ifndef AT_RESOLVE_BENEATH
-#define AT_RESOLVE_BENEATH 0
+# define AT_RESOLVE_BENEATH 0
 #endif
 
 #ifndef O_DIRECT
-#define O_DIRECT 0
+# define O_DIRECT 0
+#endif
+
+
+#ifndef O_ACCMODE
+# define O_ACCMODE 0x3
 #endif
 
 #ifndef ALLPERMS
-#define ALLPERMS 0x3
+# if defined(S_ISUID) && defined(S_IRWXU) && defined(S_ISTXT)
+#  define ALLPERMS (S_ISUID|S_ISGID|S_ISTXT|S_IRWXU|S_IRWXG|S_IRWXO)
+# elif defined(S_ISUID) && defined(S_IRWXU) && defined(S_ISVTX)
+#  define ALLPERMS (S_ISUID|S_ISGID|S_ISVTX|S_IRWXU|S_IRWXG|S_IRWXO)
+# else
+#  define ALLPERMS 07777
+# endif
+#endif
+
+#ifndef ACCESSPERMS
+# if defined(S_IRWXU)
+#  define ACCESSPERMS (S_IRWXU|S_IRWXG|S_IRWXO)
+# else
+#  define ACCESSPERMS 0777
+# endif
 #endif
 
 #ifndef O_PATH
-#ifdef O_SYMLINK
-/* MacOS doesn't have O_PATH, but we emulate it with O_SYMLINK */
-#define O_PATH O_SYMLINK
-#else
-/* O_SEARCH doesn't work for non-directories but we work around it */
-#define O_PATH O_SEARCH
+# ifdef O_SYMLINK
+/*
+ * MacOS doesn't have O_PATH, but we emulate it with O_SYMLINK
+ */
+#  define O_PATH O_SYMLINK
+# else
+/*
+ * Solaris doesn't have O_PATH, but we emulate it with O_SEARCH
+ * O_SEARCH doesn't work for non-directories but we work around it
+ */
+#  define O_PATH O_SEARCH
+# endif
 #endif
+
+#ifndef S_IFNONE
+# define S_IFNONE 0
 #endif
 
 #if !defined(HAVE_STRUCT_STAT_ST_MTIM_TV_SEC) && defined(HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC)
-#define st_atim st_atimespec
-#define st_mtim st_mtimespec
+# define st_atim st_atimespec
+# define st_mtim st_mtimespec
 #endif
 
 #define FSOBJ_FD(op) (op ? op->fd : AT_FDCWD)
@@ -98,16 +126,16 @@ typedef struct fsobj {
 
 
 extern void
-fsobj_init(FSOBJ *obp);
+fsobj_init(FSOBJ *op);
 
 extern void
-fsobj_reset(FSOBJ *obp);
+fsobj_reset(FSOBJ *op);
 
 extern void
-fsobj_fini(FSOBJ *obp);
+fsobj_fini(FSOBJ *op);
 
 extern int
-fsobj_isreal(const FSOBJ *obp);
+fsobj_exists(const FSOBJ *op);
 
 extern int
 fsobj_typeof(const FSOBJ *objp);
@@ -125,7 +153,7 @@ extern int
 fsobj_refresh(FSOBJ *op);
 
 extern void
-fsobj_close(FSOBJ *obp);
+fsobj_close(FSOBJ *op);
 
 
 extern int
@@ -133,14 +161,14 @@ fsobj_equal(const FSOBJ *a,
 	    const FSOBJ *b);
 
 extern char *
-fsobj_path(FSOBJ *obp);
+fsobj_path(FSOBJ *op);
 
 extern int
-fsobj_reopen(FSOBJ *obp,
+fsobj_reopen(FSOBJ *op,
 	     int flags);
 
 extern int
-fsobj_rewind(FSOBJ *obp);
+fsobj_rewind(FSOBJ *op);
 
 extern char *
 fsobj_typestr(FSOBJ *op);
@@ -148,7 +176,7 @@ fsobj_typestr(FSOBJ *op);
 
 extern int
 fsobj_readdir(FSOBJ *dirp,
-	      FSOBJ *objp);
+	      FSOBJ *op);
 
 
 extern int
@@ -235,10 +263,19 @@ fsobj_set_attr(FSOBJ *op,
 	       const void *data,
 	       size_t nbytes);
 
+extern int
+fsobj_mmap(FSOBJ *op,
+	   void **bufp);
+
+extern int
+fsobj_munmap(FSOBJ *op,
+	     void *bufp);
+
 extern ssize_t
 fsobj_digest(FSOBJ *op,
              int type,
              void *result,
              size_t size);
+
 
 #endif

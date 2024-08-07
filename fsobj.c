@@ -283,21 +283,6 @@ fsobj_fini(FSOBJ *op) {
 }
 
 
-/*
- * Return true if object points to a real object 
- */
-int
-fsobj_isreal(const FSOBJ *op) {
-    /* Sanity check */
-    if (!op)
-        abort();
-    if (op->magic != FSOBJ_MAGIC)
-	abort();
-
-    return (op->fd >= 0);
-}
-
-
 
 
 
@@ -440,8 +425,13 @@ fsobj_open(FSOBJ *op,
 }
 
 
-
-
+/*
+ * Returns the type of the object
+ *
+ * >0 Type of object (S_IFREG, S_IFDIR, S_IFLNK etc)
+ *  0 Non-existing object
+ * -1 Object not opened yet (errno is set to EBADF)
+ */
 int
 fsobj_typeof(const FSOBJ *op) {
     /* Sanity check */
@@ -449,17 +439,42 @@ fsobj_typeof(const FSOBJ *op) {
         abort();
     if (op->magic != FSOBJ_MAGIC)
 	abort();
+    
+    if (!op->name) {
+        errno = EBADF;
+        return -1;
+    }
 
     return (op->stat.st_mode & S_IFMT);
 }
 
 
 
+/*
+ * Verify if the objects point to the same file
+ *
+ *  1 = Same
+ *  0 = Different
+ * -1 = One or both are non-existing or not opened
+ */
 int
 fsobj_equal(const FSOBJ *a,
 	    const FSOBJ *b) {
-    if (!fsobj_isreal(a) || !fsobj_isreal(b))
-	return -1;
+    int ra, rb;
+
+    
+    ra = fsobj_typeof(a);
+    if (ra < 0)
+      return ra;
+    
+    rb = fsobj_typeof(b);
+    if (rb < 0)
+      return rb;
+    
+    if (!ra || !rb) {
+        errno = ENOENT;
+        return -1;
+    }
 
     return ((a->stat.st_dev == b->stat.st_dev) &&
 	    (a->stat.st_ino == b->stat.st_ino));
@@ -550,6 +565,7 @@ fsobj_refresh(FSOBJ *op) {
     struct stat sb;
     int rc;
 
+    
     /* Sanity checks */
     if (!op)
         abort();
@@ -570,9 +586,11 @@ fsobj_refresh(FSOBJ *op) {
 
         op->flags = O_PATH;
 
-        /* Retain object type information */
-        sb.st_mode = (op->stat.st_mode&S_IFMT);
-        op->stat = sb;
+	if (rc < 0)
+	  /* Retain object type information */
+	  sb.st_mode = (op->stat.st_mode&S_IFMT);
+	else
+	  op->stat = sb;
 
         return (rc < 0 ? 1 : 2);
     }
@@ -2397,6 +2415,50 @@ fsobj_delete_attr(FSOBJ *op,
     return rc;
 }
 
+int
+fsobj_mmap(FSOBJ *op,
+	   void **bufp) {
+    /* Sanity checks */
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+        abort();
+
+#if 0
+    if (op->flags & S_
+    if (fsobj_reopen(op, O_RDONLY) < 0)
+        return -1;
+#endif
+    
+    if (op->stat.st_size == 0)
+        return 0;
+    
+    *bufp = mmap(NULL, op->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, op->fd, 0);
+    if (*bufp == MAP_FAILED)
+        return -1;
+  
+    /* Ignore errors */
+    (void) madvise(*bufp, op->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
+    return 1;
+}
+
+
+int
+fsobj_munmap(FSOBJ *op,
+	     void *bufp) {
+    /* Sanity checks */
+    if (!op)
+        abort();
+    if (op->magic != FSOBJ_MAGIC)
+        abort();
+
+    if (bufp == MAP_FAILED)
+        return 0;
+    
+    munmap(bufp, op->stat.st_size);
+    return 1;
+}
+
 
 ssize_t
 fsobj_digest(FSOBJ *op,
@@ -2413,24 +2475,14 @@ fsobj_digest(FSOBJ *op,
     
     digest_init(&digest, type);
 
-    if (op->stat.st_size > 0) {
-        bufp = (uint8_t *) mmap(NULL, op->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, op->fd, 0);
-        if (bufp == MAP_FAILED) {
-            rc = -1;
-            goto End;
-        }
-        
-        /* Ignore errors */
-        (void) madvise(bufp, op->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-
+    if (fsobj_mmap(op, &bufp) > 0)
         digest_update(&digest, bufp, op->stat.st_size);
-    }
 
     rc = digest_final(&digest, result, size);
     
  End:
     if (bufp)
-        munmap(bufp, op->stat.st_size);
+        fsobj_munmap(op, bufp);
     
     return rc;
 }

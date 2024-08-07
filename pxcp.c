@@ -287,8 +287,8 @@ ssize_t
 file_clone(FSOBJ *src,
            FSOBJ *dst) {
     ssize_t wr, rr, rc = 0;
-    unsigned char *s_bufp = MAP_FAILED;
-    unsigned char *d_bufp = MAP_FAILED;
+    unsigned char *s_bufp = NULL;
+    unsigned char *d_bufp = NULL;
     int tfd = -1;
     char tmppath[PATH_MAX], *tmpname = NULL;
     int update_f = f_force;
@@ -330,44 +330,27 @@ file_clone(FSOBJ *src,
         
         digest_init(&s_digest, f_checksum);
         digest_init(&d_digest, f_checksum); 
-        
-        if (src->stat.st_size > 0) {
-            s_bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-            if (s_bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
-                        argv0, fsobj_path(src), strerror(errno));
-                rc = -1;
-                goto End;
-            }
-            
-            /* Ignore errors */
-            (void) madvise(s_bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-            
-            digest_update(&s_digest, s_bufp, src->stat.st_size);
-            s_rc = digest_final(&s_digest, s_digbuf, sizeof(s_digbuf));
-        }
+
+	if (fsobj_mmap(src, (void **) &s_bufp) > 0)
+	    digest_update(&s_digest, s_bufp, src->stat.st_size);
+	
+	s_rc = digest_final(&s_digest, s_digbuf, sizeof(s_digbuf));
         
         /* Make sure object is opened for reading */
         if (fsobj_reopen(dst, O_RDONLY|O_DIRECT) < 0) {
             fprintf(stderr, "%s: Error: %s: Reopening): %s\n",
                     argv0, fsobj_path(dst), strerror(errno));
-            return -1;
+	    rc = -1;
+	    goto End;
         }
-        
-        if (dst->stat.st_size > 0) {
-            d_bufp = mmap(NULL, dst->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, dst->fd, 0);
-            if (d_bufp == MAP_FAILED) {
-                fprintf(stderr, "%s: Error: %s: mmap: %s\n",
-                        argv0, fsobj_path(dst), strerror(errno));
-                rc = -1;
-                goto End;
-            }
-            
-            /* Ignore errors */
-            (void) madvise(d_bufp, dst->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
-            digest_update(&d_digest, d_bufp, dst->stat.st_size);
-            d_rc = digest_final(&d_digest, d_digbuf, sizeof(d_digbuf));
-        }
+
+	if (fsobj_mmap(dst, (void **) &d_bufp) > 0) {
+	    digest_update(&d_digest, d_bufp, dst->stat.st_size);
+	    fsobj_munmap(dst, d_bufp);
+	    d_bufp = NULL;
+	}
+	
+	d_rc = digest_final(&d_digest, d_digbuf, sizeof(d_digbuf));
 
         if (s_rc >= 0 && s_rc == d_rc && memcmp(s_digbuf, d_digbuf, s_rc) != 0) {
             if (f_debug > 1 || 1)
@@ -381,8 +364,10 @@ file_clone(FSOBJ *src,
 	}
     }
 
-    if (f_dryrun || !update_f)
-        return 0;
+    if (f_dryrun || !update_f) {
+        rc = 0;
+	goto End;
+    }
     
 #if defined(HAVE_MKOSTEMPSAT)
     strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
@@ -425,7 +410,7 @@ file_clone(FSOBJ *src,
         int f = O_CREAT|O_WRONLY|O_EXCL|(f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
             
         sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
-        tfd = openat(dst->parent->fd, tmpname, f, 0400);
+        tfd = openat(dst->parent->fd, tmpname, f, 0666);
     } while (tfd < 0 && errno == EEXIST && n < 5);
         
     if (f_debug > 1) {
@@ -448,16 +433,13 @@ file_clone(FSOBJ *src,
         
     if (f_mmap) {
         if (src->stat.st_size > 0) {
-            if (s_bufp == MAP_FAILED) {
-                s_bufp = mmap(NULL, src->stat.st_size, PROT_READ, MAP_NOCORE|MAP_PRIVATE, src->fd, 0);
-                if (s_bufp == MAP_FAILED) {
-                    fprintf(stderr, "%s: Error: %s: mmap: %s\n",
+            if (s_bufp == NULL) {
+	        if (fsobj_mmap(src, (void **) &s_bufp) < 0) {
+		    fprintf(stderr, "%s: Error: %s: mmap: %s\n",
                             argv0, fsobj_path(src), strerror(errno));
                     rc = -1;
                     goto End;
                 }
-                /* Ignore errors */
-                (void) madvise(s_bufp, src->stat.st_size, MADV_SEQUENTIAL|MADV_WILLNEED);
             }
                 
             if (tfd >= 0) {
@@ -582,9 +564,9 @@ file_clone(FSOBJ *src,
 
  End:
     if (s_bufp)
-        munmap(s_bufp, src->stat.st_size);
+        fsobj_munmap(src, s_bufp);
     if (d_bufp)
-        munmap(d_bufp, dst->stat.st_size);
+        fsobj_munmap(dst, d_bufp);
     if (tmpname)
         (void) unlinkat(dst->parent->fd, tmpname, 0);
 
@@ -741,8 +723,8 @@ group_clone(FSOBJ *src,
 }
 
 int
-mode_clone(FSOBJ *src,
-           FSOBJ *dst) {
+modes_clone(FSOBJ *src,
+	    FSOBJ *dst) {
     if (f_dryrun)
         return 0;
 
@@ -1234,7 +1216,9 @@ times_clone(FSOBJ *src,
 
 
 
-
+/*
+ * Clone an object
+ */
 int
 clone(FSOBJ *src,
       FSOBJ *dst,
@@ -1251,13 +1235,6 @@ clone(FSOBJ *src,
 	fprintf(stderr, "*** clone: %s [%s] -> %s [%s]\n",
 		fsobj_path(src), fsobj_typestr(src),
 		fsobj_path(dst), fsobj_typestr(dst));
-
-    if (fsobj_isreal(src) < 1 && !S_ISLNK(src->stat.st_mode)) {
-        fprintf(stderr, "%s: Error: %s: Source not opened (type=%s)\n",
-                argv0, fsobj_path(src),
-		_fsobj_mode_type2str(src->stat.st_mode));
-        return -1;
-    }
 
     s_type = fsobj_typeof(src);
     d_type = fsobj_typeof(dst);
@@ -1307,12 +1284,15 @@ clone(FSOBJ *src,
 
     if (dst->fd < 0) {
         if (s_type == S_IFDIR) {
+#if 1
+	    mode_t mode = 0777;
+#else
 	    mode_t mode = src->stat.st_mode&ALLPERMS;
-
 	    if (!mode) {
 	      fprintf(stderr, "*** clone: Forcing directory mode to 0700\n");
 	        mode = 0700;
 	    }
+#endif
 	    
             if (f_debug)
 	      fprintf(stderr, "*** clone: Creating & Opening destination directory for reading (mode=%04o)\n", mode);
@@ -1354,7 +1334,8 @@ clone(FSOBJ *src,
 	}
         
         if (f_debug)
-            fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n", level, f_maxdepth);
+            fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n",
+		    level, f_maxdepth);
  
 	fsobj_init(&s_obj);
         fsobj_init(&d_obj);
@@ -1493,8 +1474,16 @@ clone(FSOBJ *src,
             mdiff |= MD_GID;
     }
 
+    if (f_xattrs) {
+        rc = attrs_clone(src, dst);
+        if (rc < 0 && !f_ignore)
+            return -1;
+        if (rc > 0)
+            mdiff |= MD_ATTR;
+    }
+
     if (f_modes) {
-        rc = mode_clone(src, dst);
+        rc = modes_clone(src, dst);
 	if (rc < 0 && !f_ignore)
 	    return -1;
 	if (rc > 0)
@@ -1507,14 +1496,6 @@ clone(FSOBJ *src,
             return -1;
         if (rc > 0)
             mdiff |= MD_ACL;
-    }
-
-    if (f_xattrs) {
-        rc = attrs_clone(src, dst);
-        if (rc < 0 && !f_ignore)
-            return -1;
-        if (rc > 0)
-            mdiff |= MD_ATTR;
     }
 
     if (f_flags) {
@@ -1828,6 +1809,8 @@ main(int argc,
     }
     
     if (!f_list) {
+        mode_t mode;
+      
 	/* Open copy target */
 	path2dirbase(argv[--argc], &dirname, &name);
 
@@ -1837,8 +1820,16 @@ main(int argc,
 	    rc = 1;
 	    goto Fail;
 	}
-      
-	if (fsobj_open(&dst_base, &dst_parent, name, O_PATH|O_CREAT, na == 2 ? src_base.stat.st_mode : src_parent.stat.st_mode) < 0) {
+
+#if 1
+	if (na < 2)
+	    mode = 0777|S_IFDIR;
+	else
+	    mode = (S_ISDIR(src_base.stat.st_mode) ? 0777 : 0666) | (src_base.stat.st_mode&S_IFMT);
+#else
+	mode = (na == 2 ? src_base.stat.st_mode : src_parent.stat.st_mode);
+#endif
+	if (fsobj_open(&dst_base, &dst_parent, name, O_PATH|O_CREAT, mode) < 0) {
 	    fprintf(stderr, "%s: Error: %s: Open(target object): %s\n",
 		    argv[0], name, strerror(errno));
 	    rc = 1;

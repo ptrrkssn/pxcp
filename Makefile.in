@@ -87,7 +87,7 @@ setup-check-attrs:
 	@if [ `uname -s` = "Darwin" ];  then xattr -w pxcptest Hello t/s/f.txt; fi
 
 setup-check-tree:
-	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && ln -s nowhere t/s/symlink && echo "Hello, World!" >t/s/d/f2.txt
+	@rm -fr t && mkdir -p t/s t/s/d t/e t/d && touch t/s/f.txt && chmod 0600 t/s/f.txt && chmod 0750 t/d && ln -s nowhere t/s/symlink && echo "Hello, World!" >t/s/d/f2.txt
 
 setup-check: pxcp setup-check-tree setup-check-acl setup-check-attrs
 
