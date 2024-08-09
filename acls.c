@@ -366,7 +366,7 @@ gacl_get(GACL *ga,
          FSOBJ *op,
          unsigned int t) {
     void *a = NULL;
-    ssize_t rc = -1, s = -1;
+    ssize_t rc = 0, s = -1;
 
     
     if (!ga)
@@ -476,7 +476,7 @@ gacl_get(GACL *ga,
     ga->s = s;
     ga->t = t;
     
-    return 0;
+    return rc;
 }
 
 
