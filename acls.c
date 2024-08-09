@@ -343,20 +343,20 @@ gacl_diff(GACL *src,
     switch (src->t) {
     case ACL_TYPE_NFS4:
         return memcmp(src->a, dst->a, src->s*sizeof(ace_t));
-#ifdef ACL_TYPE_UFS
+# ifdef ACL_TYPE_UFS
     case ACL_TYPE_UFS:
         return memcmp(src->a, dst->a, src->s*sizeof(aclent_t));
-#endif
+# endif
     default:
         return -1;
     }
-#else
+    return -1;
+#endif
 
-# ifdef HAVE_ACL_GET_ENTRY
+#ifdef HAVE_ACL_GET_ENTRY
     return _acl_diff(src->a, dst->a);
-# else
+#else
     return 0;
-# endif
 #endif
 }
 
@@ -373,8 +373,12 @@ gacl_get(GACL *ga,
         abort();
     
 #if defined(HAVE_FGETXATTR) && defined(__linux__)
-    if (op->fd >= 0 && t == ACL_TYPE_NFS4) {
+    if (t == ACL_TYPE_NFS4) {
+      if (op->fd >= 0 && !S_ISLNK(op->stat.st_mode)) {
         rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, NULL, 0);
+	if (rc < 0)
+	  return -1;
+	
         if (rc > 0) {
             a = malloc(rc);
             if (!a)
@@ -392,6 +396,27 @@ gacl_get(GACL *ga,
 	    s = 0;
 	
 	goto End;
+      } else {
+        rc = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, NULL, 0);
+	if (rc < 0)
+	  return -1;
+	
+        if (rc > 0) {
+            a = malloc(rc);
+            if (!a)
+	        return -1;
+
+            s = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, a, rc);
+	    if (s < 0) {
+                free(a);
+                return -1;
+            } else if (s == 0) {
+	        free(a);
+		a = NULL;
+	    }
+        } else
+	    s = 0;
+      }
     }
 #elif defined(HAVE_FACL)
     if (op->fd >= 0) {
@@ -495,8 +520,10 @@ gacl_set(FSOBJ *op,
             rc = fsetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
         else
             rc = lsetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
+
         return rc;
     }
+    
 #elif defined(HAVE_FACL)
     if (ga->s < 0)
         return -1;
@@ -543,14 +570,15 @@ gacl_set(FSOBJ *op,
     if (op->fd >= 0 && (op->flags & O_PATH) == 0 && ga->t == ACL_TYPE_ACCESS)
         return acl_set_fd(op->fd, ga->a);
 #  endif
-#  if HAVE_ACL_SET_FILE
-    return acl_set_file(fsobj_path(op), ga->t, ga->a);
-#  else
-    errno = ENOSYS;
-    return -1;
-#  endif
 # endif
 #endif
+    
+#if HAVE_ACL_SET_FILE
+    return acl_set_file(fsobj_path(op), ga->t, ga->a);
+#else
+    errno = ENOSYS;
+    return -1;
+# endif
 }
 
 
