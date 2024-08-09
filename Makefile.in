@@ -87,6 +87,7 @@ setup-check-acl:
 	 fi
 	@if [ `uname -s` = "FreeBSD" ]; then setfacl -m user:root:r::allow t/s/f.txt; fi
 	@if [ `uname -s` = "Darwin" ];  then chmod +a "root allow read" t/s/f.txt; fi
+	@if [ `uname -s` = "SunOS" ]; then chmod A+"user:root:read_data:allow" t/s/f.txt; fi
 
 # Check targets
 setup-check-attrs:
@@ -151,6 +152,10 @@ check-8: check-5
 	@if [ `uname -s` = "Darwin" ]; then \
 		echo "--- Check 8: ACL ACE entry copied (MacOS)"; \
 		ls -le t/d/f.txt | fgrep 'user:root allow read' && echo "--> OK"; \
+	 fi
+	@if [ `uname -s` = "SunOS" ]; then \
+		echo "--- Check 8: ACL ACE entry copied (SunOS)"; \
+		ls -v t/d/f.txt | fgrep 'user:root:read_data:allow' && echo "--> OK"; \
 	 fi
 
 check-9: check-5

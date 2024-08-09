@@ -669,11 +669,13 @@ fsobj_reopen(FSOBJ *op,
     if (nfd < 0)
 	return -1;
 
-    if (nfd != op->fd) {
+    if (op->fd < 0) {
+        op->fd = nfd;
+    } else if (nfd != op->fd) {
         int rc = dup2(nfd, op->fd);
 
         if (f_debug > 1)
-            fprintf(stderr, "** fsobj_reopen: dup2(%d, %d) -> %d (%s)\n",
+	    fprintf(stderr, "** fsobj_reopen: dup2(%d, %d) -> %d (%s)\n",
                     nfd, op->fd,
                     rc, rc < 0 ? strerror(errno) : "");
 

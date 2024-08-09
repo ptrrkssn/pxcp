@@ -61,19 +61,73 @@
 #endif
 
 #ifndef ACL_TYPE_NFS4
-# ifdef __DARWIN_ACL_EXTENDED_ALLOW
+# if defined(__DARWIN_ACL_EXTENDED_ALLOW)
+/* MacOS */
 #  define ACL_TYPE_NFS4 ACL_TYPE_EXTENDED
-# else
-#  if defined(__linux__) && defined(HAVE_FGETXATTR)
-#   define GACL_MAGIC_NFS4 (0x10000000)
-#   define ACL_TYPE_NFS4   GACL_MAGIC_NFS4
-#  endif
+
+# elif defined(__linux__) && defined(HAVE_FGETXATTR)
+/* Linux */
+#   define GACL_TYPE_NFS4  (0x10000000)
+#   define ACL_TYPE_NFS4   GACL_TYPE_NFS4
+
+# elif defined(HAVE_FACL) && defined(ACE_ACCESS_ALLOWED_ACE_TYPE)
+/* Solaris */
+
+typedef int acl_perm_t;
+
+#  define ACL_BRAND_UNKNOWN 0
+#  define ACL_BRAND_POSIX   1
+#  define ACL_BRAND_NFS4    2
+
+#  define GACL_TYPE_NFS4 (0x1000000)
+#  define GACL_TYPE_UFS  (0x1000001)
+#  define ACL_TYPE_NFS4   GACL_TYPE_NFS4
+#  define ACL_TYPE_UFS    GACL_TYPE_UFS
+
+#  define ACL_ENTRY_TYPE_ALLOW     ACE_ACCESS_ALLOWED_ACE_TYPE
+#  define ACL_ENTRY_TYPE_DENY      ACE_ACCESS_DENIED_ACE_TYPE
+#  define ACL_ENTRY_TYPE_AUDIT     ACE_SYSTEM_AUDIT_ACE_TYPE
+#  define ACL_ENTRY_TYPE_ALARM     ACE_SYSTEM_ALARM_ACE_TYPE
+
+#  define ACL_USER_OBJ             ACE_OWNER
+#  define ACL_USER                 0
+#  define ACL_GROUP_OBJ            ACE_GROUP
+#  define ACL_GROUP                ACE_IDENTIFIER_GROUP
+#  define ACL_EVERYONE             ACE_EVERYONE
+
+#  define ACL_READ_DATA            ACE_READ_DATA
+#  define ACL_LIST_DIRECTORY       ACE_LIST_DIRECTORY
+#  define ACL_WRITE_DATA           ACE_WRITE_DATA
+#  define ACL_ADD_FILE             ACE_ADD_FILE
+#  define ACL_APPEND_DATA          ACE_APPEND_DATA
+#  define ACL_ADD_SUBDIRECTORY     ACE_ADD_SUBDIRECTORY
+#  define ACL_READ_NAMED_ATTRS     ACE_READ_NAMED_ATTRS
+#  define ACL_WRITE_NAMED_ATTRS    ACE_WRITE_NAMED_ATTRS
+#  define ACL_EXECUTE              ACE_EXECUTE
+#  define ACL_DELETE_CHILD         ACE_DELETE_CHILD
+#  define ACL_READ_ATTRIBUTES      ACE_READ_ATTRIBUTES
+#  define ACL_WRITE_ATTRIBUTES     ACE_WRITE_ATTRIBUTES
+#  define ACL_DELETE               ACE_DELETE
+#  define ACL_READ_ACL             ACE_READ_ACL
+#  define ACL_WRITE_ACL            ACE_WRITE_ACL
+#  define ACL_WRITE_OWNER          ACE_WRITE_OWNER
+#  define ACL_SYNCHRONIZE          ACE_SYNCHRONIZE
+
+#  define ACL_ENTRY_FILE_INHERIT            ACE_FILE_INHERIT_ACE
+#  define ACL_ENTRY_DIRECTORY_INHERIT       ACE_DIRECTORY_INHERIT_ACE
+#  define ACL_ENTRY_NO_PROPAGATE_INHERIT    ACE_NO_PROPAGATE_INHERIT_ACE
+#  define ACL_ENTRY_INHERIT_ONLY            ACE_INHERIT_ONLY_ACE
+#  define ACL_ENTRY_INHERITED               ACE_INHERITED_ACE
+
 # endif
 #endif
 
 
+#define GACL_MAGIC 0x984ae24f
+
 typedef struct gacl {
-  acl_type_t t;
+  unsigned int m;
+  unsigned int t;
   size_t s;
   void *a;
 } GACL;
@@ -82,7 +136,7 @@ typedef struct gacl {
 extern int
 gacl_get(GACL *ga,
          FSOBJ *op,
-         acl_type_t t);
+         unsigned int t);
 
 extern int
 gacl_set(FSOBJ *op,

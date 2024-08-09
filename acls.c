@@ -50,7 +50,7 @@
 #define LINUX_NFS4_ACL_XATTR "system.nfs4_acl"
 
 
-#ifdef ACL_EXECUTE
+#if defined(ACL_EXECUTE) && defined(ACL_WRITE) && defined(ACL_READ)
 static acl_perm_t acl_perms_posix[] = {
     ACL_EXECUTE,
     ACL_WRITE,
@@ -58,7 +58,8 @@ static acl_perm_t acl_perms_posix[] = {
 };
 #endif
 
-#ifdef ACL_READ_DATA
+#ifndef HAVE_FACL
+# ifdef ACL_READ_DATA
 static acl_perm_t acl_perms_nfs4[] = {
     ACL_READ_DATA,
     ACL_LIST_DIRECTORY,
@@ -75,11 +76,12 @@ static acl_perm_t acl_perms_nfs4[] = {
     ACL_DELETE,
     ACL_READ_ACL,
     ACL_WRITE_ACL,
+    ACL_WRITE_OWNER,
     ACL_SYNCHRONIZE
 };
-#endif
+# endif
 
-#ifdef ACL_ENTRY_FILE_INHERIT
+# ifdef ACL_ENTRY_FILE_INHERIT
 static int acl_flags_nfs4[] = {
     ACL_ENTRY_FILE_INHERIT,
     ACL_ENTRY_DIRECTORY_INHERIT,
@@ -87,6 +89,7 @@ static int acl_flags_nfs4[] = {
     ACL_ENTRY_INHERIT_ONLY,
     ACL_ENTRY_INHERITED
 };
+# endif
 #endif
 
 
@@ -225,8 +228,9 @@ _acl_diff(acl_t src,
 	if (acl_get_permset(d_e, &d_ps) < 0)
 	    return -1;
 
-#ifdef ACL_BRAND_NFS4
+#if defined(ACL_BRAND_NFS4) || defined(ACL_BRAND_POSIX)
 	switch (s_b) {
+#ifdef ACL_BRAND_POSIX
 	case ACL_BRAND_POSIX:
 	    for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 		acl_perm_t s_p, d_p;
@@ -237,6 +241,8 @@ _acl_diff(acl_t src,
 		    return 5;
 	    }
 	    break;
+#endif
+#ifdef ACL_BRAND_NFS4
 	case ACL_BRAND_NFS4:
 	    for (j = 0; j < sizeof(acl_perms_nfs4)/sizeof(acl_perms_nfs4[0]); j++) {
 		acl_perm_t s_p, d_p;
@@ -247,6 +253,7 @@ _acl_diff(acl_t src,
 		    return 6;
 	    }
 	    break;
+#endif
 	default:
 	    return -1;
 	}
@@ -279,7 +286,7 @@ _acl_diff(acl_t src,
 		return 8;
 	}
 #else
-#ifdef ACL_EXECUTE
+#if defined(ACL_EXECUTE) && defined(ACL_READ) && defined(ACL_WRITE)
 	for (j = 0; j < sizeof(acl_perms_posix)/sizeof(acl_perms_posix[0]); j++) {
 	    acl_perm_t s_p, d_p;
 
@@ -304,6 +311,13 @@ _acl_diff(acl_t src,
 
 
 
+void
+gacl_init(GACL *ga) {
+  memset(ga, 0, sizeof(*ga));
+  ga->m = GACL_MAGIC;
+}
+
+
 int
 gacl_diff(GACL *src,
           GACL *dst) {
@@ -313,20 +327,36 @@ gacl_diff(GACL *src,
     if (d)
         return d;
 
-#ifdef GACL_MAGIC_NFS4
-    if (src->t == GACL_MAGIC_NFS4) {
+#if defined(HAVE_FGETXATTR) && defined(__linux__)
+    if (src->t == ACL_TYPE_NFS4) {
         d = src->s - dst->s;
         if (d)
             return d;
       
         return memcmp(src->a, dst->a, src->s);
     }
+#elif defined(HAVE_FACL)
+    d = src->s - dst->s;
+    if (d)
+        return d;
+    
+    switch (src->t) {
+    case ACL_TYPE_NFS4:
+        return memcmp(src->a, dst->a, src->s*sizeof(ace_t));
+#ifdef ACL_TYPE_UFS
+    case ACL_TYPE_UFS:
+        return memcmp(src->a, dst->a, src->s*sizeof(aclent_t));
 #endif
-
-#ifdef HAVE_ACL_GET_ENTRY
-    return _acl_diff(src->a, dst->a);
+    default:
+        return -1;
+    }
 #else
+
+# ifdef HAVE_ACL_GET_ENTRY
+    return _acl_diff(src->a, dst->a);
+# else
     return 0;
+# endif
 #endif
 }
 
@@ -334,84 +364,130 @@ gacl_diff(GACL *src,
 int
 gacl_get(GACL *ga,
          FSOBJ *op,
-         acl_type_t t) {
-#ifdef HAVE_FACL
-  errno = ENOSYS;
-  return -1;
-#else
-    acl_t a = NULL;
-    
+         unsigned int t) {
+    void *a = NULL;
+    ssize_t rc = -1, s = -1;
 
-    memset(ga, 0, sizeof(*ga));
     
-#ifdef GACL_MAGIC_NFS4
+    if (!ga)
+        abort();
+    
+#if defined(HAVE_FGETXATTR) && defined(__linux__)
     if (op->fd >= 0 && t == ACL_TYPE_NFS4) {
-        ssize_t rc;
-       
         rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, NULL, 0);
         if (rc > 0) {
-            ga->a = malloc(rc);
-            if (!ga->a)
-                abort();
-            ga->s = rc;
-            
-            rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s);
-            if (rc != ga->s) {
-                free(ga->a);
-                memset(ga, 0, sizeof(*ga));
-                return -1;
-            }
+            a = malloc(rc);
+            if (!a)
+	        return -1;
 
-            ga->t = t;
-            return 0;
-        }
+            s = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, a, rc);
+	    if (s < 0) {
+                free(a);
+                return -1;
+            } else if (s == 0) {
+	        free(a);
+		a = NULL;
+	    }
+        } else
+	    s = 0;
+	
+	goto End;
     }
-#endif
-#if HAVE_ACL_GET_FD_NP
+#elif defined(HAVE_FACL)
+    if (op->fd >= 0) {
+        switch (t) {
+	case ACL_TYPE_NFS4:
+	    rc = facl(op->fd, ACE_GETACLCNT, 0, NULL);
+	    if (rc < 0)
+	        return -1;
+	    if (rc > 0) {
+	        a = calloc(rc, sizeof(ace_t));
+		if (!a)
+		    return -1;
+		s = facl(op->fd, ACE_GETACL, rc, a);
+		if (s < 0) {
+		    free(a);
+		    return -1;
+		} else if (s == 0) {
+		    free(a);
+		    a = NULL;
+		}
+	    } else
+	        s = 0;
+	    break;
+	    
+# ifdef ACL_TYPE_UFS
+	case ACL_TYPE_UFS:
+	    rc = facl(op->fd, GETACLCNT, 0, NULL);
+	    if (rc < 0)
+	        return -1;
+	    if (rc > 0) {
+	        a = calloc(rc, sizeof(aclent_t));
+		if (!a)
+		    return -1;
+		s = facl(op->fd, GETACL, rc, a);
+		if (s < 0) {
+		    free(a);
+		    return -1;
+		} else if (s == 0) {
+		    free(a);
+		    a = NULL;
+		}
+	    } else
+	        s = 0;
+	    break;
+# endif
+	default:
+	  errno = EINVAL;
+	  return -1;
+	}
+	goto End;
+    }	
+#else
+# if HAVE_ACL_GET_FD_NP
     if (op->fd >= 0) {
         a = acl_get_fd_np(op->fd, t);
         goto End;
     }
-#endif
-#if HAVE_ACL_GET_LINK_NP
+# endif
+# if HAVE_ACL_GET_LINK_NP
     a = acl_get_link_np(fsobj_path(op), t);
     goto End;
-#else
-# if HAVE_ACL_GET_FD
+# else
+#  if HAVE_ACL_GET_FD
     if (op->fd >= 0 && (op->flags & O_PATH) == 0 && t == ACL_TYPE_ACCESS) {
         a = acl_get_fd(op->fd);
         goto End;
     }
-# endif
-# if HAVE_ACL_GET_FILE
+#  endif
+#  if HAVE_ACL_GET_FILE
     a = acl_get_file(fsobj_path(op), t);
     goto End;
-# else
+#  else
     errno = ENOSYS;
     return -1;
+#  endif
 # endif
 #endif
+
  End:
-    if (!a)
-      return -1;
-    
+    gacl_init(ga);
     ga->a = a;
-    ga->s = 0;
+    ga->s = s;
     ga->t = t;
+    
     return 0;
-#endif
 }
 
 
 int
 gacl_set(FSOBJ *op,
          GACL *ga) {
-#ifdef HAVE_FACL
-    errno = ENOSYS;
-    return -1;
-#else
-#ifdef GACL_MAGIC_NFS4
-    /* Linux */
+    if (ga->m != GACL_MAGIC)
+        abort();
+
+    
+#if defined(HAVE_FSETXATTR) && defined(__linux__)
     if (ga->t == ACL_TYPE_NFS4) {
         int rc;
 
@@ -421,25 +497,59 @@ gacl_set(FSOBJ *op,
             rc = lsetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
         return rc;
     }
-#endif
-#if HAVE_ACL_SET_FD_NP
+#elif defined(HAVE_FACL)
+    if (ga->s < 0)
+        return -1;
+    
+    if (op->fd >= 0) {
+        switch (ga->t) {
+	case ACL_TYPE_NFS4:
+	    return facl(op->fd, ACE_SETACL, ga->s, ga->a);
+	  
+# ifdef ACL_TYPE_UFS
+	case ACL_TYPE_UFS:
+	    return facl(op->fd, SETACL, ga->s, ga->a);
+# endif
+	    
+	default:
+	    errno = EINVAL;
+	    return -1;
+	}
+    }
+    
+    switch (ga->t) {
+    case ACL_TYPE_NFS4:
+        return acl(fsobj_path(op), ACE_SETACL, ga->s, ga->a);
+
+# ifdef ACL_TYPE_UFS
+    case ACL_TYPE_UFS:
+        return acl(fsobj_path(op), SETACL, ga->s, ga->a);
+# endif
+	
+    default:
+       errno = EINVAL;
+       return -1;
+    }
+#else
+
+# if HAVE_ACL_SET_FD_NP
     if (op->fd >= 0 && (op->flags & O_PATH) == 0)
         return acl_set_fd_np(op->fd, ga->a, ga->t);
-#endif
-#if HAVE_ACL_SET_LINK_NP
+# endif
+# if HAVE_ACL_SET_LINK_NP
     return acl_set_link_np(fsobj_path(op), ga->t, ga->a);
-#else
-# if HAVE_ACL_SET_FD
+# else
+#  if HAVE_ACL_SET_FD
     if (op->fd >= 0 && (op->flags & O_PATH) == 0 && ga->t == ACL_TYPE_ACCESS)
         return acl_set_fd(op->fd, ga->a);
-# endif
-# if HAVE_ACL_SET_FILE
+#  endif
+#  if HAVE_ACL_SET_FILE
     return acl_set_file(fsobj_path(op), ga->t, ga->a);
-# else
+#  else
     errno = ENOSYS;
     return -1;
+#  endif
 # endif
-#endif
 #endif
 }
 
@@ -448,19 +558,19 @@ void
 gacl_free(GACL *ga) {
     if (!ga)
         return;
+    if (ga->m != GACL_MAGIC)
+        abort();
     
-#if HAVE_FGETXATTR
-    if (ga->t == ACL_TYPE_NFS4) {
-        if (ga->a)
-            free(ga->a);
-        memset(ga, 0, sizeof(*ga));
-        return;
-    }
-#endif
-
-#ifndef HAVE_FACL
+#if defined(HAVE_FGETXATTR) && defined(__linux__)
+    if (ga->a)
+        free(ga->a);
+#elif defined(HAVE_FACL)
+    if (ga->a)
+        free(ga->a);
+#else
     if (ga->a)
         acl_free(ga->a);
 #endif
+    
     memset(ga, 0, sizeof(*ga));
 }
