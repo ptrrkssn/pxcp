@@ -613,7 +613,7 @@ fsobj_refresh(FSOBJ *op) {
 int
 fsobj_reopen(FSOBJ *op,
 	     int flags) {
-    int nfd;
+    int nfd = -1;
 
 
     /* Sanity check */
@@ -637,14 +637,25 @@ fsobj_reopen(FSOBJ *op,
 
 #ifdef HAVE_OPENAT
 #ifdef O_EMPTY_PATH
-    nfd = openat(op->fd, "", O_EMPTY_PATH|flags, op->stat.st_mode);
-    if (f_debug > 1)
-        fprintf(stderr, "** fsobj_reopen(%s, 0x%x): openat(%d, \"\", O_EMPTY_PATH, 0x%x) -> %d (%s) [flags=%s]\n",
-                fsobj_path(op), flags,
-                op->fd, flags, 
-                nfd, nfd < 0 ? strerror(errno) : "",
-                _fsobj_open_flags(flags));
-    goto End;
+    if (op->fd >= 0) {
+        nfd = openat(op->fd, "", O_EMPTY_PATH|flags, op->stat.st_mode);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_reopen(%s, 0x%x): openat(%d, \"\", O_EMPTY_PATH, 0x%x) -> %d (%s) [flags=%s]\n",
+                    fsobj_path(op), flags,
+                    op->fd, flags, 
+                    nfd, nfd < 0 ? strerror(errno) : "",
+                    _fsobj_open_flags(flags));
+        goto End;
+    } else if (op->parent && op->parent->fd > 0) {
+        nfd = openat(op->parent->fd, op->name, flags, op->stat.st_mode);
+        if (f_debug > 1)
+            fprintf(stderr, "** fsobj_reopen(%s, 0x%x): openat(%d=%s, %s, %x, 0x%x) -> %d (%s) [flags=%s]\n",
+                    fsobj_path(op), flags,
+                    op->parent->fd, fsobj_path(op->parent), op->name, flags, op->stat.st_mode,
+                    nfd, nfd < 0 ? strerror(errno) : "",
+                    _fsobj_open_flags(flags));
+        goto End;
+    }
 #else
     if (op->parent && op->parent->fd < 0) {
         /* Virtual, nothing to do */

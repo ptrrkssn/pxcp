@@ -619,7 +619,11 @@ gacl_set(FSOBJ *op,
 	}
     }
 #  endif
-    if (op->fd >= 0 && ((op->flags & O_PATH) == 0 || (op->flags & O_SYMLINK))) {
+    if (op->fd >= 0 && ((op->flags & O_PATH) == 0
+#ifdef O_SYMLINK
+                        || (op->flags & O_SYMLINK)
+#endif
+                        )) {
 	rc = acl_set_fd_np(op->fd, a, ga->t);
 	goto End;
     }

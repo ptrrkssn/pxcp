@@ -267,14 +267,14 @@ symlink_clone(FSOBJ *src,
 			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
 		return -1;
 	    }
+            
+            if (fsobj_stat(dst, NULL, NULL) < 0) {
+                fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
+                        argv0, fsobj_path(dst), strerror(errno));
+                return -1;
+            }
 	}
 	rc = 1;
-    }
-
-    if (fsobj_reopen(dst, O_RDONLY) < 0) {
-        fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
-                argv0, fsobj_path(dst), strerror(errno));
-        return -1;
     }
 
     return rc;
