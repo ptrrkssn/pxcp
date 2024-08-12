@@ -345,13 +345,19 @@ fsobj_open(FSOBJ *op,
         flags |= O_DIRECTORY;
     }
 
+#ifdef O_SYMLINK
+    flags |= O_SYMLINK;
+#else
     flags |= O_NOFOLLOW;
+#endif
     
 #ifdef HAVE_OPENAT
     fd = openat(FSOBJ_FD(dirp), name, flags, mode);
+
+#if 0
 #ifdef O_SYMLINK
-    if (fd < 0 && errno == ELOOP && flags & O_SYMLINK)
-	fd = openat(FSOBJ_FD(dirp), name, flags&~O_NOFOLLOW, mode);
+    if (fd < 0 && errno == ELOOP)
+	fd = openat(FSOBJ_FD(dirp), name, (flags&~O_NOFOLLOW)|O_SYMLINK, mode);
 #endif
 #ifdef O_SEARCH
     if (fd < 0 && flags & O_SEARCH) {
@@ -362,6 +368,8 @@ fsobj_open(FSOBJ *op,
 		  fsobj_path(op), FSOBJ_FD(op), name);
     }
 #endif
+#endif
+    
     if (f_debug > 1)
         fprintf(stderr, "** fsobj_open(%s, %s, 0x%x, %04o): openat(%d, %s, 0x%x, %04o) -> %d (%d=%s) [op=%p, flags=%s]\n",
                 fsobj_path(dirp), np ? np : "NULL", flags, mode,
@@ -626,7 +634,7 @@ fsobj_reopen(FSOBJ *op,
     if ((flags & O_SEARCH) && !S_ISDIR(op->stat.st_mode))
       flags &= ~O_SEARCH;
 #endif
-    
+
 #ifdef HAVE_OPENAT
 #ifdef O_EMPTY_PATH
     nfd = openat(op->fd, "", O_EMPTY_PATH|flags, op->stat.st_mode);
@@ -647,8 +655,22 @@ fsobj_reopen(FSOBJ *op,
                   nfd, nfd < 0 ? strerror(errno) : "");
         goto End;
     }
+
+#ifdef O_SYMLINK
+    if (S_ISLNK(op->stat.st_mode))
+	flags |= O_SYMLINK;
+    else
+	flags |= O_NOFOLLOW;
+#endif
     
     nfd = openat(FSOBJ_FD(op->parent), op->name, flags);
+#ifdef O_SYMLINK
+    if (nfd < 0 && errno == ELOOP && !(flags & O_SYMLINK)) {
+	flags &= ~O_NOFOLLOW;
+	flags |= O_SYMLINK;
+	nfd = openat(FSOBJ_FD(op->parent), op->name, flags, op->stat.st_mode&ALLPERMS);
+    }
+#endif
     if (f_debug > 1)
         fprintf(stderr, "** fsobj_reopen(%s, 0x%x): openat(%d, %s, 0x%x) -> %d (%s)\n",
                 fsobj_path(op), flags,
@@ -657,7 +679,21 @@ fsobj_reopen(FSOBJ *op,
     goto End;
 #endif
 #else
+#ifdef O_SYMLINK
+    if (S_ISLNK(op->stat.st_mode))
+	flags |= O_SYMLINK;
+    else
+	flags |= O_NOFOLLOW;
+#endif
+    
     nfd = open(fsobj_path(op), flags, op->stat.st_mode);
+#ifdef O_SYMLINK
+    if (nfd < 0 && errno == ELOOP && !(flags & O_SYMLINK)) {
+	flags &= ~O_NOFOLLOW;
+	flags |= O_SYMLINK;
+	nfd = open(fsobj_path(op), flags, mode);
+    }
+#endif
     if (f_debug > 1)
         fprintf(stderr, "** fsobj_reopen(%s, 0x%x): open(%s, 0x%x) -> %d (%s)\n",
                 fsobj_path(op), flags,

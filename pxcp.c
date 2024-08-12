@@ -271,7 +271,7 @@ symlink_clone(FSOBJ *src,
 	rc = 1;
     }
 
-    if (fsobj_stat(dst, NULL, NULL) < 0) {
+    if (fsobj_reopen(dst, O_RDONLY) < 0) {
         fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
                 argv0, fsobj_path(dst), strerror(errno));
         return -1;
@@ -804,18 +804,11 @@ acls_clone(FSOBJ *src,
       d_rc = gacl_get(&d_acl, dst, ACL_TYPE_ACCESS);
 #endif
 
-    if (s_rc < 0 && d_rc < 0)
+    /* No ACL on source object */
+    if (s_rc < 0)
         return 0;
 
-    if (f_force || (s_rc < 0 && d_rc >= 0) || (s_rc >= 0 && d_rc < 0) || (s_rc >= 0 && (rc = gacl_diff(&s_acl, &d_acl)))) {
-        if (s_rc < 0) {
-            fprintf(stderr, "No source ACL, generating trivial ACL\n");
-
-            /* Generate a trivial ACL from the mode bits */
-            /* XXX: ToDO */
-            abort();
-        }
-
+    if (f_force || (s_rc == 0 && d_rc > 0) || (s_rc > 0 && d_rc == 0) || (s_rc > 0 && (rc = gacl_diff(&s_acl, &d_acl)))) {
         if (!f_dryrun) {
             if (gacl_set(dst, &s_acl) < 0) {
                 fprintf(stderr, "%s: Error: %s: Setting ACL: %s\n",
@@ -829,7 +822,7 @@ acls_clone(FSOBJ *src,
     }
 
 #if defined(ACL_TYPE_ACCESS) && defined(ACL_TYPE_DEFAULT)
-    if (s_acl.t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
+    if (s_rc > 0 && s_acl.t == ACL_TYPE_ACCESS && S_ISDIR(dst->stat.st_mode)) {
         gacl_free(&s_acl);
         gacl_free(&d_acl);
 
@@ -857,8 +850,10 @@ acls_clone(FSOBJ *src,
 #endif
 
  End:
-    gacl_free(&s_acl);
-    gacl_free(&d_acl);
+    if (s_rc > 0)
+	gacl_free(&s_acl);
+    if (d_rc > 0)
+	gacl_free(&d_acl);
     return rc;
 }
 

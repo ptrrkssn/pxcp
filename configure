@@ -4917,6 +4917,17 @@ esac
 fi
 
 
+ac_fn_c_check_type "$LINENO" "acl_t" "ac_cv_type_acl_t" "#include <sys/acl.h>
+"
+if test "x$ac_cv_type_acl_t" = xyes
+then :
+
+printf "%s\n" "#define HAVE_ACL_T 1" >>confdefs.h
+
+
+fi
+
+
 # Checks for library functions.
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for error_at_line" >&5
 printf %s "checking for error_at_line... " >&6; }

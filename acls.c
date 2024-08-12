@@ -361,6 +361,13 @@ gacl_diff(GACL *src,
 }
 
 
+/*
+ * Get an object ACL of a specific type
+ *
+ * >0 ACL found
+ *  0 No ACL found
+ * <0 Error
+ */
 int
 gacl_get(GACL *ga,
          FSOBJ *op,
@@ -371,52 +378,60 @@ gacl_get(GACL *ga,
     
     if (!ga)
         abort();
-    
+
 #if defined(HAVE_FGETXATTR) && defined(__linux__)
     if (t == ACL_TYPE_NFS4) {
-      if (op->fd >= 0 && !S_ISLNK(op->stat.st_mode)) {
-        rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, NULL, 0);
-	if (rc < 0)
-	  return -1;
+	if (op->fd >= 0 && !S_ISLNK(op->stat.st_mode)) {
+	    rc = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, NULL, 0);
+	    if (rc < 0)
+		goto End;
 	
-        if (rc > 0) {
-            a = malloc(rc);
-            if (!a)
-	        return -1;
+	    if (rc > 0) {
+		a = malloc(rc);
+		if (!a) {
+		    rc = -1;
+		    goto End;
+		}
 
-            s = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, a, rc);
-	    if (s < 0) {
-                free(a);
-                return -1;
-            } else if (s == 0) {
-	        free(a);
-		a = NULL;
-	    }
-        } else
-	    s = 0;
+		s = fgetxattr(op->fd, LINUX_NFS4_ACL_XATTR, a, rc);
+		if (s < 0) {
+		    free(a);
+		    a = NULL;
+		    rc = s;
+		    goto End;
+		} else if (s == 0) {
+		    free(a);
+		    a = NULL;
+		}
+	    } else
+		s = 0;
 	
-	goto End;
-      } else {
-        rc = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, NULL, 0);
-	if (rc < 0)
-	  return -1;
+	    goto End;
+	} else {
+	    rc = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, NULL, 0);
+	    if (rc < 0)
+		goto End;
 	
-        if (rc > 0) {
-            a = malloc(rc);
-            if (!a)
-	        return -1;
+	    if (rc > 0) {
+		a = malloc(rc);
+		if (!a) {
+		    rc = -1;
+		    goto End;
+		}
 
-            s = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, a, rc);
-	    if (s < 0) {
-                free(a);
-                return -1;
-            } else if (s == 0) {
-	        free(a);
-		a = NULL;
-	    }
-        } else
-	    s = 0;
-      }
+		s = lgetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, a, rc);
+		if (s < 0) {
+		    free(a);
+		    a = NULL;
+		    rc = s;
+		    goto End;
+		} else if (s == 0) {
+		    free(a);
+		    a = NULL;
+		}
+	    } else
+		s = 0;
+	}
     }
 #elif defined(HAVE_FACL)
     if (op->fd >= 0) {
@@ -424,15 +439,19 @@ gacl_get(GACL *ga,
 	case ACL_TYPE_NFS4:
 	    rc = facl(op->fd, ACE_GETACLCNT, 0, NULL);
 	    if (rc < 0)
-	        return -1;
+		goto End;
 	    if (rc > 0) {
 	        a = calloc(rc, sizeof(ace_t));
-		if (!a)
-		    return -1;
+		if (!a) {
+		    rc = -1;
+		    goto End;
+		}
 		s = facl(op->fd, ACE_GETACL, rc, a);
 		if (s < 0) {
 		    free(a);
-		    return -1;
+		    a = NULL;
+		    rc = s;
+		    goto End;
 		} else if (s == 0) {
 		    free(a);
 		    a = NULL;
@@ -445,15 +464,19 @@ gacl_get(GACL *ga,
 	case ACL_TYPE_UFS:
 	    rc = facl(op->fd, GETACLCNT, 0, NULL);
 	    if (rc < 0)
-	        return -1;
+		goto End;
 	    if (rc > 0) {
 	        a = calloc(rc, sizeof(aclent_t));
-		if (!a)
-		    return -1;
+		if (!a) {
+		    rc = -1;
+		    goto End;
+		}
 		s = facl(op->fd, GETACL, rc, a);
 		if (s < 0) {
 		    free(a);
-		    return -1;
+		    a = NULL;
+		    rc = s;
+		    goto End;
 		} else if (s == 0) {
 		    free(a);
 		    a = NULL;
@@ -463,8 +486,8 @@ gacl_get(GACL *ga,
 	    break;
 # endif
 	default:
-	  errno = EINVAL;
-	  return -1;
+	    errno = EINVAL;
+	    return -1;
 	}
 	goto End;
     }	
@@ -496,89 +519,137 @@ gacl_get(GACL *ga,
 #endif
 
  End:
+    if (rc < 0)
+	return rc;
+
     gacl_init(ga);
     ga->a = a;
     ga->s = s;
     ga->t = t;
     
-    return rc;
+    return a ? 1 : 0;
 }
 
 
 int
 gacl_set(FSOBJ *op,
          GACL *ga) {
+    int rc = 0;
+#ifdef HAVE_ACL_T
+    acl_t a = NULL;
+#endif
+    
+    if (!ga)
+	abort();
+    
     if (ga->m != GACL_MAGIC)
         abort();
-
     
 #if defined(HAVE_FSETXATTR) && defined(__linux__)
+    /* Linux */
+    
     if (ga->t == ACL_TYPE_NFS4) {
-        int rc;
-
         if (op->fd >= 0)
             rc = fsetxattr(op->fd, LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
         else
             rc = lsetxattr(fsobj_path(op), LINUX_NFS4_ACL_XATTR, ga->a, ga->s, 0);
 
-        return rc;
+	goto End;
     }
     
 #elif defined(HAVE_FACL)
+    /* Solaris */
+    
     if (ga->s < 0)
         return -1;
     
     if (op->fd >= 0) {
         switch (ga->t) {
 	case ACL_TYPE_NFS4:
-	    return facl(op->fd, ACE_SETACL, ga->s, ga->a);
+	    rc = facl(op->fd, ACE_SETACL, ga->s, ga->a);
+	    break;
 	  
 # ifdef ACL_TYPE_UFS
 	case ACL_TYPE_UFS:
-	    return facl(op->fd, SETACL, ga->s, ga->a);
+	    rc = facl(op->fd, SETACL, ga->s, ga->a);
+	    break;
 # endif
 	    
 	default:
 	    errno = EINVAL;
-	    return -1;
+	    rc = -1;
 	}
+	goto End;
     }
     
     switch (ga->t) {
     case ACL_TYPE_NFS4:
-        return acl(fsobj_path(op), ACE_SETACL, ga->s, ga->a);
+        rc = acl(fsobj_path(op), ACE_SETACL, ga->s, ga->a);
+	break;
 
 # ifdef ACL_TYPE_UFS
     case ACL_TYPE_UFS:
-        return acl(fsobj_path(op), SETACL, ga->s, ga->a);
+        rc = acl(fsobj_path(op), SETACL, ga->s, ga->a);
+	break;
 # endif
 	
     default:
        errno = EINVAL;
-       return -1;
+       rc = -1;
     }
-#else
+    goto End;
 
+#else
+    /* FreeBSD or MacOS */
+
+    a = ga->a;
+    if (!a)
+	a = acl_init(0);
+	
 # if HAVE_ACL_SET_FD_NP
-    if (op->fd >= 0 && (op->flags & O_PATH) == 0)
-        return acl_set_fd_np(op->fd, ga->a, ga->t);
+#  ifdef O_SYMLINK
+    if ((op->flags & O_SYMLINK) && S_ISLNK(op->stat.st_mode) && op->fd < 0) {
+	/*
+	 * MacOS needs to use acl_set_fd_np() to set ACLs on symlinks
+	 * so we need to have the fd opened
+	 */
+	if (fsobj_reopen(op, O_RDONLY|O_SYMLINK) < 0) {
+	    rc = -1;
+	    goto End;
+	}
+    }
+#  endif
+    if (op->fd >= 0 && ((op->flags & O_PATH) == 0 || (op->flags & O_SYMLINK))) {
+	rc = acl_set_fd_np(op->fd, a, ga->t);
+	goto End;
+    }
 # endif
 # if HAVE_ACL_SET_LINK_NP
-    return acl_set_link_np(fsobj_path(op), ga->t, ga->a);
+    rc = acl_set_link_np(fsobj_path(op), ga->t, a);
+    goto End;
+
 # else
 #  if HAVE_ACL_SET_FD
-    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && ga->t == ACL_TYPE_ACCESS)
-        return acl_set_fd(op->fd, ga->a);
+    if (op->fd >= 0 && (op->flags & O_PATH) == 0 && ga->t == ACL_TYPE_ACCESS) {
+        rc = acl_set_fd(op->fd, a);
+	goto End;
+    }
 #  endif
 # endif
 #endif
     
 #if HAVE_ACL_SET_FILE
-    return acl_set_file(fsobj_path(op), ga->t, ga->a);
+    rc = acl_set_file(fsobj_path(op), ga->t, a);
 #else
     errno = ENOSYS;
-    return -1;
+    rc = -1;
 # endif
+
+ End:
+    if (a != ga->a)
+	acl_free(a);
+    
+    return rc;
 }
 
 

@@ -1,4 +1,4 @@
-AC_PREREQ([2.71])
+tyAC_PREREQ([2.71])
 AC_INIT([PXCP],[0.1.0],[pen@lysator.liu.se],[pxcp],[https://github.com/ptrrkssn/pxcp])
 
 dnl AC_LANG(C)
@@ -28,6 +28,8 @@ AC_TYPE_UID_T
 AC_TYPE_MODE_T
 AC_TYPE_SIZE_T
 AC_TYPE_SSIZE_T
+
+AC_CHECK_TYPES([acl_t], [], [], [[#include <sys/acl.h>]])
 
 # Checks for library functions.
 AC_FUNC_ERROR_AT_LINE

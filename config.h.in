@@ -42,6 +42,9 @@
 /* Define to 1 if you have the 'acl_set_link_np' function. */
 #undef HAVE_ACL_SET_LINK_NP
 
+/* Define to 1 if the system has the type 'acl_t'. */
+#undef HAVE_ACL_T
+
 /* Define to 1 if you have the 'adler32_z' function. */
 #undef HAVE_ADLER32_Z
 
