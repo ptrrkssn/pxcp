@@ -34,9 +34,12 @@ VALGRINDFLAGS =		--leak-check=full --track-origins=yes --error-exitcode=1 # --sh
 
 MANFILES = 		pxcp.man
 
-PROGRAMS =	        pxcp
+PROGRAMS =	        pxcp fstest
 
 PXCP_OBJS =             pxcp.o fsobj.o acls.o misc.o digest.o xxhash.o fletcher.o
+
+FSTEST_OBJS = 		fstest.o
+
 
 all: $(PROGRAMS)
 
@@ -48,8 +51,17 @@ acls.o:     acls.c acls.h config.h
 fsobj.o:    fsobj.c fsobj.h acls.h misc.h digest.h config.h
 pxcp.o:     pxcp.c fsobj.h acls.h misc.h config.h
 
+fstest.o:   fstest.c config.h
+
 pxcp: $(PXCP_OBJS)
 	$(CC) $(LDFLAGS) -o pxcp $(PXCP_OBJS) $(LIBS)
+
+
+fstest.o:   fstest.c config.h
+
+fstest: $(FSTEST_OBJS)
+	$(CC) $(LDFLAGS) -o fstest $(FSTEST_OBJS) $(LIBS)
+
 
 configure: configure.ac
 	autoconf
@@ -59,7 +71,8 @@ config.h.in: configure.ac
 
 
 clean:
-	-rm -f core *.core *.o pxcp; find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
+	-rm -f core *.core *.o pxcp fstest
+	find . \( -name '*~' -o -name '#*' \) -print0 | xargs -0 rm -f
 
 distclean: clean
 	rm -fr config.status config.log autom4te.cache Makefile config.h t

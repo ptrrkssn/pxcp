@@ -1,5 +1,5 @@
 /*
- * pxcp.c
+ * pxcp.c - Peter's eXtended Copy tool
  *
  * Copyright (c) 2024, Peter Eriksson <pen@lysator.liu.se>
  *
