@@ -218,7 +218,25 @@ check-16: setup-check
 	@echo ""; echo "--- Check 16: FLETCHER32 Checksum"
 	@./pxcp -L --checksum=fletcher32 t/s/d/f2.txt | fgrep '[41 36 7a b4]' && echo "--> OK"
 
-check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10 check-11 check-12 check-13 check-14 check-15 check-16
+check-17: setup-check
+	@if [ -x /usr/bin/valgrind -o /usr/local/bin/valgrind ]; then \
+		echo ""; echo "--- Check 17: Valgrind (list)"; \
+		$(VALGRIND) $(VALGRINDFLAGS) ./pxcp -L --checksum=fletcher32 t/s/d/f2.txt && echo "--> OK"; \
+	fi
+
+check-18: setup-check
+	@if [ -x /usr/bin/valgrind -o /usr/local/bin/valgrind ]; then \
+		echo ""; echo "--- Check 18: Valgrind (copy)"; \
+		$(VALGRIND) $(VALGRINDFLAGS) ./pxcp -vrAXt  t/s t/d && echo "--> OK"; \
+	fi
+
+check-19: setup-check
+	@if [ -x /usr/bin/valgrind -o /usr/local/bin/valgrind ]; then \
+		echo ""; echo "--- Check 19: Valgrind (copy & prune)"; \
+		$(VALGRIND) $(VALGRINDFLAGS) ./pxcp -vrAXpm  t/s t/d && echo "--> OK"; \
+	fi
+
+check:	pxcp setup-check check-1 check-2 check-3 check-4 check-5 check-6 check-7 check-8 check-9 check-10 check-11 check-12 check-13 check-14 check-15 check-16 check-17 check-18 check-19
 	@echo ""; echo "All tests passed."
 
 

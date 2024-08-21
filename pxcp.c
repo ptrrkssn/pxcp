@@ -840,18 +840,34 @@ acls_clone(FSOBJ *src,
 
 #ifdef ACL_TYPE_NFS4
     s_rc = gacl_get(&s_acl, src, ACL_TYPE_NFS4);
+    if (f_debug > 1)
+        fprintf(stderr, "gacl_get(%s, ACL_TYPE_NFS4) -> %d (%d=%s) [a=%p]\n",
+                fsobj_path(src), s_rc, errno, strerror(errno),
+                s_acl.a);
 #endif
 #ifdef ACL_TYPE_ACCESS
-    if (s_rc < 0)
+    if (s_rc < 0) {
         s_rc = gacl_get(&s_acl, src, ACL_TYPE_ACCESS);
+        if (f_debug > 1)
+            fprintf(stderr, "gacl_get(%s, ACL_TYPE_ACCESS) -> %d (%d=%s) [a=%p]\n",
+                    fsobj_path(src), s_rc, errno, strerror(errno),
+                    s_acl.a);
+    }
 #endif
 
 #ifdef ACL_TYPE_NFS4
     d_rc = gacl_get(&d_acl, dst, ACL_TYPE_NFS4);
+    if (f_debug > 1)
+        fprintf(stderr, "gacl_get(%s, ACL_TYPE_NFS4) -> %d (%d=%s) [a=%p]\n",
+                fsobj_path(dst), d_rc, errno, strerror(errno), d_acl.a);
 #endif
 #ifdef ACL_TYPE_ACCESS
-    if (d_rc < 0)
-      d_rc = gacl_get(&d_acl, dst, ACL_TYPE_ACCESS);
+    if (d_rc < 0) {
+        d_rc = gacl_get(&d_acl, dst, ACL_TYPE_ACCESS);
+        if (f_debug > 1)
+            fprintf(stderr, "gacl_get(%s, ACL_TYPE_ACCESS) -> %d (%d=%s) [a=%p]\n",
+                    fsobj_path(dst), d_rc, errno, strerror(errno), d_acl.a);
+    }
 #endif
 
     /* No ACL on source object */
