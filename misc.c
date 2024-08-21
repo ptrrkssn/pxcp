@@ -33,11 +33,14 @@
 
 #include "config.h"
 #include "misc.h"
+#include "digest.h"
 
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
 #include <sys/types.h>
+
+
 
 char *
 strdupcat(const char *str,
@@ -65,7 +68,7 @@ strdupcat(const char *str,
     cp = str;
     while (*cp)
         *res++ = *cp++;
-  
+
     /* And then append the rest */
     va_start(ap, str);
     while ((cp = va_arg(ap, char *)) != NULL) {
@@ -77,4 +80,29 @@ strdupcat(const char *str,
     /* NUL-terminate the string */
     *res = '\0';
     return retval;
+}
+
+int
+get_int(char *start,
+          char **next) {
+    return strtol(start, next, 0);
+}
+
+
+int
+get_digest(char *start,
+           char **next) {
+    int v;
+
+    v = digest_str2type(start);
+    if (v < 0)
+        v = get_int(start, next);
+    else {
+	while (*start)
+	    ++start;
+
+        *next = start;
+    }
+
+    return v;
 }

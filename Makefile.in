@@ -49,7 +49,7 @@ digest.o:   digest.c digest.h xxhash.h fletcher.h config.h
 misc.o:     misc.c misc.h config.h
 acls.o:     acls.c acls.h config.h
 fsobj.o:    fsobj.c fsobj.h acls.h misc.h digest.h config.h
-pxcp.o:     pxcp.c fsobj.h acls.h misc.h config.h
+pxcp.o:     pxcp.c config.h acls.h fsobj.h digest.h misc.h
 
 fstest.o:   fstest.c config.h
 

@@ -38,4 +38,12 @@ extern char *
 strdupcat(const char *str,
 	  ...);
 
+extern int
+get_int(char *start,
+        char **next);
+
+extern int
+get_digest(char *start,
+           char **next);
+
 #endif

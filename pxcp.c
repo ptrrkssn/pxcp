@@ -51,6 +51,7 @@
 #include "acls.h"
 #include "fsobj.h"
 #include "digest.h"
+#include "misc.h"
 
 #ifdef HAVE_STRUCT_STAT_ST_MTIMESPEC_TV_SEC
 #define st_mtim st_mtimespec
@@ -96,30 +97,6 @@ gid_t *my_groupv = NULL;
 struct timespec t0, t1;
 
 
-int
-get_int(char *start,
-          char **next) {
-    return strtol(start, next, 0);
-}
-
-int
-get_digest(char *start,
-           char **next) {
-    int v;
-
-    v = digest_str2type(start);
-    if (v < 0)
-        v = get_int(start, next);
-    else {
-	while (*start)
-	    ++start;
-        
-        *next = start;
-    }
-    
-    return v;
-}
-
 
 struct options {
     char c;
@@ -153,7 +130,7 @@ struct options {
     { 'L', "list",       &f_list,        get_int,     "List objects" },
     { 'M', "mmap",       &f_mmap,        get_int,     "Use mmap(2)" },
     { 'S', "sync",       &f_sync,        get_int,     "Select file sync modes" },
-    { 'T', "timestamps", &f_timestamps,  get_int,     "Copy timestamps" }, 
+    { 'T', "timestamps", &f_timestamps,  get_int,     "Copy timestamps" },
     { 'X', "xattrs",     &f_xattrs,      get_int,     "Copy Extended Attributes" },
     { -1,  NULL,         NULL,           NULL,        NULL }
 };
@@ -191,7 +168,7 @@ int cur_depth = 0;
 #define funlinkat(dirfd,name,fd,flags) unlinkat(dirfd,name,flags)
 #endif
 
-
+
 int
 in_grouplist(gid_t g) {
     int i;
@@ -203,12 +180,47 @@ in_grouplist(gid_t g) {
 }
 
 
+
+char *
+ts_text(struct timespec *ts,
+	char *buf,
+	size_t bufsize) {
+    char *cp;
+    struct tm *tp;
+
+    tp = localtime(&ts->tv_sec);
+    strftime(buf, bufsize, "%F %T", tp);
+
+    cp = buf;
+    while (*cp) {
+	++cp;
+	--bufsize;
+    }
+    snprintf(cp, bufsize, ".%09lu", ts->tv_nsec);
+    return buf;
+}
+
+static void
+p_buf(FILE *fp,
+      const uint8_t *buf,
+      size_t len) {
+    putc('[', fp);
+    while (len-- > 0) {
+        fprintf(fp, "%02x", *buf++);
+        if (len > 0)
+            putc(' ', fp);
+    }
+    putc(']', fp);
+}
+
+
+
 int
 ts_check(struct timespec *a,
          struct timespec *b,
          int exact_check) {
     int v;
-    
+
     if (exact_check)
         v = !(a->tv_sec == b->tv_sec && a->tv_nsec == b->tv_nsec);
     else {
@@ -222,12 +234,38 @@ ts_check(struct timespec *a,
         fprintf(stderr, "** ts_check(%s): %ld.%09ld vs %ld.%09ld -> %d [f_times=%d]\n",
                 exact_check ? "exact" : "newer",
                 a->tv_sec, a->tv_nsec, b->tv_sec, b->tv_nsec, v, f_times);
-    
+
     return v;
+}
+
+static void
+path2dirbase(char *path,
+	     char **dirname,
+	     char **basename) {
+    char *cp;
+
+    cp = strrchr(path, '/');
+    if (cp) {
+      *cp++ = '\0';
+
+      if (!*path)
+	*dirname = "/";
+      else
+	*dirname = path;
+
+      if (*cp)
+	*basename = cp;
+      else
+	*basename = ".";
+    } else {
+      *dirname = ".";
+      *basename = path;
+    }
 }
 
 
 
+
 ssize_t
 symlink_clone(FSOBJ *src,
               FSOBJ *dst) {
@@ -261,13 +299,13 @@ symlink_clone(FSOBJ *src,
                         argv0, fsobj_path(dst), strerror(errno));
 		return -1;
 	    }
-            
+
 	    if (fsobj_symlink(dst, NULL, s_pbuf) < 0) {
 		fprintf(stderr, "%s: Error: %s -> %s: Create(symlink): %s\n",
 			argv0, fsobj_path(dst), s_pbuf, strerror(errno));
 		return -1;
 	    }
-            
+
             if (fsobj_stat(dst, NULL, NULL) < 0) {
                 fprintf(stderr, "%s: Error: %s: Stat(symlink): %s\n",
                         argv0, fsobj_path(dst), strerror(errno));
@@ -282,7 +320,7 @@ symlink_clone(FSOBJ *src,
 
 
 
-
+
 ssize_t
 file_clone(FSOBJ *src,
            FSOBJ *dst) {
@@ -299,7 +337,7 @@ file_clone(FSOBJ *src,
 
     if (!update_f && fsobj_typeof(dst) == 0)
         update_f = 1;
-    
+
     if (!update_f && f_sizes && src->stat.st_size != dst->stat.st_size) {
         if (f_debug > 1)
             fprintf(stderr, "** file_clone(%s, %s): Sizes differs\n",
@@ -320,22 +358,22 @@ file_clone(FSOBJ *src,
                 argv0, fsobj_path(src), strerror(errno));
         return -1;
     }
-        
+
     if (!update_f && f_checksum) {
         DIGEST s_digest, d_digest;
         unsigned char s_digbuf[DIGEST_BUFSIZE_MAX];
         unsigned char d_digbuf[DIGEST_BUFSIZE_MAX];
         ssize_t s_rc = -1, d_rc = -1;
-        
+
 
         if (!f_mmap)
             f_mmap = 1;
-        
+
         digest_init(&s_digest, f_checksum);
 	if (fsobj_mmap(src, (void **) &s_bufp) > 0)
 	    digest_update(&s_digest, s_bufp, src->stat.st_size);
 	s_rc = digest_final(&s_digest, s_digbuf, sizeof(s_digbuf));
-        
+
         /* Make sure object is opened for reading */
         if (fsobj_reopen(dst, O_RDONLY|O_DIRECT) < 0) {
             fprintf(stderr, "%s: Error: %s: Reopening): %s\n",
@@ -344,7 +382,7 @@ file_clone(FSOBJ *src,
 	    goto End;
         }
 
-        digest_init(&d_digest, f_checksum); 
+        digest_init(&d_digest, f_checksum);
 	if (fsobj_mmap(dst, (void **) &d_bufp) > 0) {
 	    digest_update(&d_digest, d_bufp, dst->stat.st_size);
 	    fsobj_munmap(dst, d_bufp);
@@ -368,7 +406,7 @@ file_clone(FSOBJ *src,
         rc = 0;
 	goto End;
     }
-    
+
 #if defined(HAVE_MKOSTEMPSAT)
     strcpy(tmppath, ".pxcp_tmpfile.XXXXXX");
     tmpname = tmppath;
@@ -386,7 +424,7 @@ file_clone(FSOBJ *src,
     tmpname = strrchr(tmppath, '/');
     if (tmpname)
         ++tmpname;
-        
+
     tfd = mkostemp(tmppath, 0);
     if (f_debug > 1)
         fprintf(stderr, "** file_clone(%s,%s): mkostemp(%s, 0) -> %d (%s)\n",
@@ -408,29 +446,29 @@ file_clone(FSOBJ *src,
     int n = 0;
     do {
         int f = O_CREAT|O_WRONLY|O_EXCL|(f_sync ? O_SYNC|(f_sync > 1 ? O_DIRECT : 0) : 0);
-            
+
         sprintf(tmppath, ".pxcp_tmpfile.%d.%d", getpid(), n++);
         tfd = openat(dst->parent->fd, tmpname, f, 0666);
     } while (tfd < 0 && errno == EEXIST && n < 5);
-        
+
     if (f_debug > 1) {
         fprintf(stderr, "** file_clone(%s,%s): openat(%d,%s,0x%x[%s],0400) -> %d (%s)\n",
-                fsobj_path(src), fsobj_path(dst), 
+                fsobj_path(src), fsobj_path(dst),
                 dst->parent->fd, tmpname, f, _fsobj_open_flags(f),
                 tfd, tfd < 0 ? strerror(errno) : "");
         return -1;
     }
-        
+
     tmpname = tmppath;
 #endif
-        
+
     if (tfd < 0) {
         fprintf(stderr, "%s: Error: %s/%s: Create(tmpfile): %s\n",
                 argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
         return -1;
     }
-        
-        
+
+
     if (f_mmap) {
         if (src->stat.st_size > 0) {
             if (s_bufp == NULL) {
@@ -441,12 +479,12 @@ file_clone(FSOBJ *src,
                     goto End;
                 }
             }
-                
+
             if (tfd >= 0) {
                 wr = write(tfd, s_bufp, src->stat.st_size);
                 if (wr < 0) {
                     int t_errno = errno;
-                        
+
                     fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
                             argv0, fsobj_path(dst->parent), tmpname,
                             tfd, s_bufp, (long long int) src->stat.st_size,
@@ -455,9 +493,9 @@ file_clone(FSOBJ *src,
                     rc = -1;
                     goto End;
                 }
-                    
+
                 b_written += wr;
-                    
+
                 if (wr != src->stat.st_size) {
                     fprintf(stderr, "%s: Error: %s/%s: Short write\n",
                             argv0, fsobj_path(dst->parent), tmpname);
@@ -471,34 +509,34 @@ file_clone(FSOBJ *src,
         }
     } else {
         char buf[256*1024];
-            
+
         if (ftruncate(tfd, src->stat.st_size) < 0) {
             int t_errno = errno;
-                
+
             fprintf(stderr, "%s: Error: %s/%s: Ftruncate: %s\n",
                     argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
             errno = t_errno;
             rc = -1;
             goto End;
         }
-            
+
         while ((rr = read(src->fd, buf, sizeof(buf))) > 0) {
             wr = write(tfd, buf, rr);
             if (wr < 0) {
                 int t_errno = errno;
-                    
+
                 fprintf(stderr, "%s: Error: %s/%s: Write(%d,%p,%lld): %s\n",
                         argv0, fsobj_path(dst->parent), tmpname,
                         tfd, buf, (long long int) rr,
                         strerror(errno));
-                    
+
                 errno = t_errno;
                 rc = -1;
                 goto End;
             }
-                
+
             b_written += wr;
-                
+
             if (wr != rr) {
                 fprintf(stderr, "%s: Error: %s/%s: Short write\n",
                         argv0, fsobj_path(dst->parent), tmpname);
@@ -506,11 +544,11 @@ file_clone(FSOBJ *src,
                 rc = -1;
                 goto End;
             }
-                
+
         }
         if (rr < 0) {
             int t_errno = errno;
-                
+
             fprintf(stderr, "%s: Error: %s/%s: Read: %s\n",
                     argv0, fsobj_path(dst->parent), tmpname, strerror(errno));
             errno = t_errno;
@@ -520,10 +558,10 @@ file_clone(FSOBJ *src,
 
         rc = 1;
     }
-        
+
     if (dst->fd >= 0) {
         int d_rc;
-            
+
         d_rc = dup2(tfd, dst->fd);
         if (f_debug)
             fprintf(stderr, "** file_clone: dup2(%d, %d) -> %d\n",
@@ -535,26 +573,26 @@ file_clone(FSOBJ *src,
             fprintf(stderr, "** file_clone: op->fd = %d\n",
                     tfd);
     }
-        
+
     if (renameat(dst->parent->fd, tmpname, dst->parent->fd, dst->name) < 0) {
         int t_errno = errno;
-            
+
         fprintf(stderr, "%s: Error: %s/%s -> %s/%s: Rename: %s\n",
                 argv0,
                 fsobj_path(dst->parent), tmpname,
-                    
+
                 fsobj_path(dst->parent), dst->name,
                 strerror(errno));
         errno = t_errno;
         rc = -1;
         goto End;
     }
-        
+
     tmpname = NULL;
 
     if (fsobj_reopen(dst, O_RDONLY) < 0) {
         int t_errno = errno;
-            
+
         fprintf(stderr, "%s: Error: %s: Reopening: %s\n",
                 argv0, fsobj_path(dst), strerror(errno));
         errno = t_errno;
@@ -574,6 +612,8 @@ file_clone(FSOBJ *src,
 }
 
 
+
+
 int
 dir_prune(FSOBJ *dp) {
     int rc = 0;
@@ -658,6 +698,7 @@ dir_prune(FSOBJ *dp) {
 
 
 
+
 int
 owner_clone(FSOBJ *src,
              FSOBJ *dst) {
@@ -690,6 +731,9 @@ owner_clone(FSOBJ *src,
     return rc;
 }
 
+
+
+
 int
 group_clone(FSOBJ *src,
             FSOBJ *dst) {
@@ -722,26 +766,29 @@ group_clone(FSOBJ *src,
     return rc;
 }
 
+
+
+
 int
 modes_clone(FSOBJ *src,
 	    FSOBJ *dst) {
     if (f_dryrun)
         return 0;
 
-    
+
     if ((src->stat.st_mode&ALLPERMS) == 0) {
       /* If all bits off -> Solaris with ACLs? */
       if (f_debug)
 	  fprintf(stderr, "** mode_clone: all-zero perms, not copying\n");
       return 0;
     }
-    
+
     if (f_force || (src->stat.st_mode&ALLPERMS) != (dst->stat.st_mode&ALLPERMS)) {
         if (fsobj_chmod(dst, NULL, (src->stat.st_mode&ALLPERMS)) < 0) {
             if (errno == EOPNOTSUPP && S_ISLNK(dst->stat.st_mode))
                 /* Linux doesn't support changing permissions on symbolic links */
                 return 0;
-      
+
             fprintf(stderr, "%s: Error: %s: Setting Mode Bits(0%o <- 0%o): %s\n",
                     argv0,
                     fsobj_path(dst),
@@ -756,6 +803,8 @@ modes_clone(FSOBJ *src,
 }
 
 
+
+
 int
 flags_clone(FSOBJ *src,
             FSOBJ *dst) {
@@ -775,19 +824,20 @@ flags_clone(FSOBJ *src,
         }
     }
 #endif
-    
+
     return 0;
 }
 
 
 
+
 int
 acls_clone(FSOBJ *src,
            FSOBJ *dst) {
     int rc = 0, s_rc = -1, d_rc = -1;
     GACL s_acl, d_acl;
 
-    
+
 #ifdef ACL_TYPE_NFS4
     s_rc = gacl_get(&s_acl, src, ACL_TYPE_NFS4);
 #endif
@@ -857,6 +907,9 @@ acls_clone(FSOBJ *src,
     return rc;
 }
 
+
+
+
 /* Clone extended attributes */
 int
 attrs_clone(FSOBJ *src,
@@ -869,7 +922,7 @@ attrs_clone(FSOBJ *src,
     if (f_debug)
         fprintf(stderr, "*** attrs_clone(%s, %s)\n",
                 fsobj_path(src), fsobj_path(dst));
-    
+
     /* Get list of extended attribute from source */
     s_alen = fsobj_list_attrs(src, NULL, NULL, 0);
     if (s_alen < 0) {
@@ -909,7 +962,7 @@ attrs_clone(FSOBJ *src,
 	rc = -1;
 	goto End;
     }
-    
+
     d_alen = fsobj_list_attrs(dst, NULL, d_alist, d_alen);
     if (d_alen < 0) {
 	fprintf(stderr, "%s: Error: %s: extattr_list_fd: %s\n",
@@ -917,7 +970,7 @@ attrs_clone(FSOBJ *src,
 	return -1;
     }
 
-    
+
     /* Scan for attributes to remove */
     d_i = 0;
     while (d_i < d_alen) {
@@ -926,12 +979,12 @@ attrs_clone(FSOBJ *src,
 
 	if (f_debug)
 	    fprintf(stderr, "** attrs_clone: check for remove : aname = %s\n", aname);
-	
+
 	s_i = 0;
 	while (s_i < s_alen) {
 	    if (strcmp(aname, d_alist+d_i) == 0)
 		break; /* Found a match */
-	    
+
 	    /* Locate end of SRC aname */
 	    while (s_i < s_alen && s_alist[s_i++] != '\0')
 		;
@@ -949,7 +1002,7 @@ attrs_clone(FSOBJ *src,
 		printf("  - %s : %s\n", fsobj_path(dst), aname);
 	    rc = 1;
 	}
-	
+
 	/* Locate end of DST aname */
 	while (d_i < d_alen && d_alist[d_i++] != '\0')
 	    ;
@@ -958,23 +1011,23 @@ attrs_clone(FSOBJ *src,
     s_i = 0;
     while (s_i < s_alen) {
 	/* Scan for matching attribute */
-	char *aname = s_alist+s_i;	
+	char *aname = s_alist+s_i;
 	ssize_t s_adlen, d_adlen;
 	void *s_adata, *d_adata;
-	
+
 	if (f_debug)
 	    fprintf(stderr, "** attrs_clone: check for copy : Aname = %s\n", aname);
-        
+
 	d_i = 0;
 	while (d_i < d_alen) {
 	    if (strcmp(aname, d_alist+d_i) == 0)
 		break;
-	    
+
 	    /* Locate end of DST aname */
 	    while (d_i < d_alen && d_alist[d_i++] != '\0')
 		;
 	}
-	
+
 	/* Get SRC attribute */
 	s_adlen = fsobj_get_attr(src, NULL, aname, NULL, 0);
 	if (s_adlen < 0) {
@@ -1018,7 +1071,7 @@ attrs_clone(FSOBJ *src,
 		rc = -1;
 		goto End;
 	    }
-		
+
 	    d_adlen = fsobj_get_attr(dst, NULL, aname, d_adata, d_adlen);
 	    if (d_adlen < 0) {
 		fprintf(stderr, "%s: Error: %s: %s: extattr_get_fd: %s\n",
@@ -1026,7 +1079,7 @@ attrs_clone(FSOBJ *src,
 		rc = -1;
 		goto End;
 	    }
-	    
+
 	    if (memcmp(d_adata, s_adata, s_adlen) != 0) {
 		if (!f_dryrun) {
 		    if (fsobj_set_attr(dst, NULL, aname, s_adata, s_adlen) < 0) {
@@ -1036,7 +1089,7 @@ attrs_clone(FSOBJ *src,
 			goto End;
 		    }
 		}
-		
+
 		if (f_verbose > 1)
 		    printf("  ! %s : %s\n", fsobj_path(dst), aname);
 		rc = 1;
@@ -1059,7 +1112,7 @@ attrs_clone(FSOBJ *src,
 
 	free(s_adata);
 	s_adata = NULL;
-	
+
 	/* Locate end of SRC aname */
 	while (s_i < s_alen && s_alist[s_i++] != '\0')
 	    ;
@@ -1075,55 +1128,24 @@ attrs_clone(FSOBJ *src,
 }
 
 
-char *
-ts_text(struct timespec *ts,
-	char *buf,
-	size_t bufsize) {
-    char *cp;
-    struct tm *tp;
-
-    tp = localtime(&ts->tv_sec);
-    strftime(buf, bufsize, "%F %T", tp);
-
-    cp = buf;
-    while (*cp) {
-	++cp;
-	--bufsize;
-    }
-    snprintf(cp, bufsize, ".%09lu", ts->tv_nsec);
-    return buf;
-}
-
-static void
-p_buf(FILE *fp,
-      const uint8_t *buf,
-      size_t len) {
-    putc('[', fp);
-    while (len-- > 0) {
-        fprintf(fp, "%02x", *buf++);
-        if (len > 0)
-            putc(' ', fp);
-    }
-    putc(']', fp);
-}
-
+
 int
 dir_list(FSOBJ *op,
          int level) {
     FSOBJ obj;
     int n = 1, rc;
 
-    
-    if (f_debug > 1) 
+
+    if (f_debug > 1)
 	fprintf(stderr, "** dir_list(%s)\n", fsobj_path(op));
-    
+
     printf("%*s%s",
 	   level*2, "", fsobj_path(op));
 
     if (f_checksum && S_ISREG(op->stat.st_mode)) {
         uint8_t digest[DIGEST_BUFSIZE_MAX];
         ssize_t len;
-        
+
         len = fsobj_digest(op, f_checksum, digest, sizeof(digest));
         if (len >= 0) {
             putchar('\t');
@@ -1138,15 +1160,15 @@ dir_list(FSOBJ *op,
                (long long unsigned) op->stat.st_size,
                op->stat.st_uid,
                op->stat.st_gid);
-        
+
     putchar('\n');
-    
+
     if (!f_recurse || fsobj_typeof(op) != S_IFDIR || (f_maxdepth && level > f_maxdepth))
 	return 1;
-    
+
     if (fsobj_reopen(op, O_RDONLY|O_DIRECTORY) < 0)
 	return -1;
-	
+
     fsobj_init(&obj);
     while ((rc = fsobj_readdir(op, &obj)) > 0) {
 	rc = dir_list(&obj, level+1);
@@ -1158,11 +1180,12 @@ dir_list(FSOBJ *op,
     fsobj_fini(&obj);
     if (rc < 0)
 	return -1;
-    
+
     return n;
 }
 
 
+
 int
 times_clone(FSOBJ *src,
             FSOBJ *dst) {
@@ -1208,11 +1231,9 @@ times_clone(FSOBJ *src,
 }
 
 
-
-
-
+
 /*
- * Clone an object
+ * clone an object
  */
 int
 clone(FSOBJ *src,
@@ -1244,7 +1265,7 @@ clone(FSOBJ *src,
                     argv0, fsobj_path(src), fsobj_path(dst));
             return -1;
         }
-        
+
         if (f_debug)
             fprintf(stderr, "*** clone: different destination type - deleting\n");
 
@@ -1288,7 +1309,7 @@ clone(FSOBJ *src,
 	        mode = 0700;
 	    }
 #endif
-	    
+
             if (f_debug)
 	      fprintf(stderr, "*** clone: Creating & Opening destination directory for reading (mode=%04o)\n", mode);
             if (fsobj_open(dst, NULL, NULL, O_CREAT|O_RDONLY|O_DIRECTORY, mode|S_IFDIR) < 0) {
@@ -1327,11 +1348,11 @@ clone(FSOBJ *src,
                         f_maxdepth);
             break;
 	}
-        
+
         if (f_debug)
             fprintf(stderr, "*** clone: Doing subdirectory [level=%d, maxdepth=%d]\n",
 		    level, f_maxdepth);
- 
+
 	fsobj_init(&s_obj);
         fsobj_init(&d_obj);
 
@@ -1349,7 +1370,7 @@ clone(FSOBJ *src,
 		    fprintf(stderr, "%s: Error: %s: Passing Source Base\n",
 			    argv0, fsobj_path(&d_obj));
 		}
-			
+
                 s_rc = fsobj_open(&s_obj, src, d_obj.name, O_PATH, 0);
                 if (f_debug)
                     fprintf(stderr, "*** clone: Prune Checking %s: %d\n",
@@ -1392,7 +1413,7 @@ clone(FSOBJ *src,
 			    argv0, fsobj_path(&s_obj));
 		    continue;
 		}
-		
+
 		d_rc = fsobj_open(&d_obj, dst, s_obj.name, O_PATH, s_obj.stat.st_mode);
 		if (f_debug)
 		    fprintf(stderr, "*** clone: Clone Checking %s: %d\n", s_obj.name, d_rc);
@@ -1403,7 +1424,7 @@ clone(FSOBJ *src,
 		    rc = -1;
 		    break;
 		}
-		
+
 		s_rc = clone(&s_obj, &d_obj, level+1);
 		if (s_rc < 0) {
 		    if (f_debug)
@@ -1412,7 +1433,7 @@ clone(FSOBJ *src,
 		    rc = -1;
 		    break;
 		}
-		
+
 		fsobj_reset(&d_obj);
 		fsobj_reset(&s_obj);
 	    }
@@ -1436,7 +1457,7 @@ clone(FSOBJ *src,
                 goto End;
             return -1;
         }
-        if (rc > 0) 
+        if (rc > 0)
             mdiff |= MD_DATA;
         break;
 
@@ -1535,44 +1556,19 @@ clone(FSOBJ *src,
 }
 
 
-static void
-path2dirbase(char *path,
-	     char **dirname,
-	     char **basename) {
-    char *cp;
-    
-    cp = strrchr(path, '/');
-    if (cp) {
-      *cp++ = '\0';
-      
-      if (!*path)
-	*dirname = "/";
-      else
-	*dirname = path;
-      
-      if (*cp)
-	*basename = cp;
-      else
-	*basename = ".";
-    } else {
-      *dirname = ".";
-      *basename = path;
-    }
-}
-
-
+
 void
 usage(void) {
     int k;
 
-    
+
     printf("Usage:\n  %s [options] <src> [.. <src-N>] [<dst>]\n\nOptions:\n", argv0);
     for (k = 0; options[k].c != -1; k++)
         printf("  -%c    --%-10s    %s\n",
                options[k].c,
                options[k].l,
                options[k].help);
-    
+
     puts("\nAll options may optionally take a argument. Short options only numeric (-v3)");
     puts("Long options numeric or string (--depth=1k, --checksum=sha256).");
     puts("Numbers may be specified as decimal, octal (preceed with 0) or hexadecimal (preceed 0x)");
@@ -1580,24 +1576,25 @@ usage(void) {
 
     printf("\nAvailable checksum digests:\n");
     digests_print(stdout, NULL);
-    
+
     exit(0);
 }
 
 
+
 int
 main(int argc,
      char *argv[]) {
     int i, k, rc = 0, c_rc, na;
     char *s, *dirname, *name;
     FSOBJ src_parent, dst_parent;
-    
+
     argv0 = argv[0];
 
     s = getenv("DEBUG");
     if (s)
       (void) sscanf(s, "%d", &f_debug);
-    
+
     for (i = 1; i < argc && argv[i][0] == '-'; i++) {
         char *op, *cp = NULL;
 
@@ -1605,7 +1602,7 @@ main(int argc,
             /* --long[=val] option */
             char *os, *vs;
             int *vp, f_no = 0;
-            
+
 
             os = argv[i]+2;
             vs = strchr(os, '=');
@@ -1630,7 +1627,7 @@ main(int argc,
             vp = options[k].vp;
 	    if (!vp)
                 usage();
-            
+
             if (!vs) {
                 if (f_no)
                     *vp = 0;
@@ -1672,12 +1669,12 @@ main(int argc,
             }
             continue;
         }
-        
+
 	for (op = argv[i]+1; op && *op; op = cp) {
 	    int *vp;
 	    long v;
 
-	    
+
 	    for (k = 0; options[k].c != -1 && options[k].c != *op; k++)
 		;
 	    if (options[k].c == -1) {
@@ -1685,7 +1682,7 @@ main(int argc,
 			argv[0], *op);
 		exit(1);
 	    }
-            
+
 	    if (!options[k].vp)
                 usage();
 
@@ -1695,13 +1692,13 @@ main(int argc,
 #else
 	    v = get_int(op+1, &cp);
 #endif
-                
+
             if (cp == op+1) {
                 (*vp)++;
             }
             else {
                 *vp = v;
-                
+
                 if (*cp) {
                     switch (tolower(*cp)) {
                     case 'k':
@@ -1734,7 +1731,7 @@ main(int argc,
 
     if (f_help)
         usage();
-    
+
     if (f_all) {
 	f_owners     += f_all;
 	f_groups     += f_all;
@@ -1761,7 +1758,7 @@ main(int argc,
 
     fsobj_init(&src_parent);
     fsobj_init(&src_base);
-    
+
     fsobj_init(&dst_parent);
     fsobj_init(&dst_base);
 
@@ -1781,7 +1778,7 @@ main(int argc,
         rc = 1;
         goto Fail;
     }
-    
+
     /* Open first source */
     if (f_debug)
 	fprintf(stderr, "** Opening first source: %s\n", argv[i]);
@@ -1794,7 +1791,7 @@ main(int argc,
 	rc = 1;
 	goto Fail;
     }
-    
+
     if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
 	fprintf(stderr, "%s: Error: %s/%s: Open(source object): %s\n",
 		argv[0], dirname, name, strerror(errno));
@@ -1802,10 +1799,10 @@ main(int argc,
 	goto Fail;
 
     }
-    
+
     if (!f_list) {
         mode_t mode;
-      
+
 	/* Open copy target */
 	path2dirbase(argv[--argc], &dirname, &name);
 
@@ -1832,7 +1829,7 @@ main(int argc,
 	}
     }
 
-    
+
     while (i < argc) {
 	int n;
 
@@ -1853,20 +1850,20 @@ main(int argc,
 
 	    fsobj_reset(&src_base);
 	    fsobj_reset(&src_parent);
-	    
+
 	    if (fsobj_open(&src_parent, NULL, dirname, O_PATH, 0) <= 0) {
 		fprintf(stderr, "%s: Error: %s: Open(source directory): %s\n",
 			argv[0], dirname, strerror(errno));
 		rc = 1;
 		goto Fail;
 	    }
-	    
+
 	    if (fsobj_open(&src_base, &src_parent, name, O_PATH, 0) <= 0) {
 		fprintf(stderr, "%s: Error: %s/%s: Open(source object): %s\n",
 			argv[0], dirname, name, strerror(errno));
 		rc = 1;
 		goto Fail;
-		
+
 	    }
 	}
     }
@@ -1916,7 +1913,7 @@ main(int argc,
 	    wb /= 1000;
 	    wbu = "GB";
 	}
-        
+
 	wps = b_written / dts;
         wu = "B/s";
 	if (wps > 1000) {
@@ -1941,7 +1938,7 @@ main(int argc,
  Fail:
     fsobj_fini(&src_base);
     fsobj_fini(&src_parent);
-    
+
     fsobj_fini(&dst_base);
     fsobj_fini(&dst_parent);
 
